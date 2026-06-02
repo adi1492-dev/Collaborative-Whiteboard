@@ -16,45 +16,25 @@ import { PenTool } from '../tools/PenTool.js';
 import { ShapeTool } from '../tools/ShapeTool.js';
 import { StickyTool } from '../tools/StickyTool.js';
 import { TextTool } from '../tools/TextTool.js';
+import { EraserTool } from '../tools/EraserTool.js';
+import { ImageTool } from '../tools/ImageTool.js';
 import { Tool } from '../tools/Tool.js';
 
 // Simple Pan and Eraser stubs
 class PanTool extends Tool {
   constructor() { super('pan'); }
   onActivate() { this.cm.container.style.cursor = 'grab'; }
-  onPointerDown(pt, e) {
-    this.isPanning = true;
-    this.lastPt = { x: e.clientX, y: e.clientY };
-    this.cm.container.style.cursor = 'grabbing';
-  }
+  onDeactivate() { this.cm.container.style.cursor = 'default'; }
+  onPointerDown(pt, e) { this.cm.container.style.cursor = 'grabbing'; }
+  onPointerUp(pt, e) { this.cm.container.style.cursor = 'grab'; }
   onPointerMove(pt, e) {
-    if (this.isPanning && this.lastPt) {
-      const dx = e.clientX - this.lastPt.x;
-      const dy = e.clientY - this.lastPt.y;
-      this.cm.transform.panBy(dx, dy);
+    if (e.buttons === 1) {
+      this.cm.transform.panBy(e.movementX, e.movementY);
       this.cm.requestStaticRender();
-      this.lastPt = { x: e.clientX, y: e.clientY };
     }
-  }
-  onPointerUp() {
-    this.isPanning = false;
-    this.cm.container.style.cursor = 'grab';
   }
 }
 
-class EraserTool extends Tool {
-  constructor() { super('eraser'); }
-  onActivate() { this.cm.container.style.cursor = 'cell'; }
-  onPointerDown(pt) { this.eraseAt(pt); }
-  onPointerMove(pt, e) { if (e.buttons === 1) this.eraseAt(pt); }
-  eraseAt(pt) {
-    const el = this.em.getElementAt(pt.x, pt.y);
-    if (el && !el.locked) {
-      this.em.removeElement(el.id);
-      if (this.cm.syncManager) this.cm.syncManager.broadcastDelete(el.id);
-    }
-  }
-}
 
 export class BoardPage {
   constructor(root, app, boardId) {
@@ -161,6 +141,7 @@ export class BoardPage {
     this.ih.registerTool('sticky', new StickyTool());
     this.ih.registerTool('text', new TextTool());
     this.ih.registerTool('eraser', new EraserTool());
+    this.ih.registerTool('image', new ImageTool());
     
     this.ih.setActiveTool('select');
 
