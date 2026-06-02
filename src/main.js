@@ -3,6 +3,7 @@
  * Handles routing, auth state, and page mounting.
  */
 
+import './logger.js';
 import { AuthManager } from './auth/AuthManager.js';
 import { LandingPage } from './pages/LandingPage.js';
 import { LoginPage } from './pages/LoginPage.js';

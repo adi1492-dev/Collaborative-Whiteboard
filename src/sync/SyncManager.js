@@ -30,7 +30,7 @@ export class SyncManager {
 
     // Setup WebSocket
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = process.env.NODE_ENV === 'production' ? window.location.host : 'localhost:3001';
+    const wsHost = window.location.host;
     const url = `${wsProtocol}//${wsHost}/ws/board/${boardId}`;
     
     this.ws = new WebSocketClient(url, () => this.app.auth.getAccessToken());
@@ -78,6 +78,7 @@ export class SyncManager {
 
     // Handle host assignment
     this.ws.on('host_assigned', () => {
+      console.log("[SyncManager] Received host_assigned! This client is now the designated room host.");
       this.isHost = true;
       this._updateHostUI();
     });
@@ -118,6 +119,9 @@ export class SyncManager {
       elementId,
       updatedAt: this._tickClock() 
     });
+    if (this.isHost) {
+      this.ws.send('element_delete', { elementId });
+    }
     this.dirtyElements.delete(elementId);
     this._scheduleAutoSave();
   }
@@ -157,9 +161,17 @@ export class SyncManager {
 
   async forceSave() {
     // Prevent non-hosts from saving to DB to save costs and avoid conflicts
-    if (!this.isHost) return true;
+    if (!this.isHost) {
+      console.log("[SyncManager] Save request ignored: client is not the room host.");
+      return true;
+    }
 
-    if (this.dirtyElements.size === 0) return true;
+    if (this.dirtyElements.size === 0) {
+      console.log("[SyncManager] Save skipped: no dirty elements to sync.");
+      return true;
+    }
+    
+    console.log(`[SyncManager] Saving ${this.dirtyElements.size} dirty elements to database...`);
     
     const elementsToSave = Array.from(this.dirtyElements.values());
     this.dirtyElements.clear(); // Clear immediately so new edits can be queued
@@ -203,6 +215,10 @@ export class SyncManager {
     const hydratedEl = this._hydrateElement(remoteEl);
     if (hydratedEl) {
       this.em.setElement(hydratedEl);
+      if (this.isHost) {
+        this.dirtyElements.set(hydratedEl.id, remoteEl);
+        this._scheduleAutoSave();
+      }
     }
   }
 
@@ -215,7 +231,13 @@ export class SyncManager {
     if (!localEl) {
       // We don't have it, treat as create
       const hydratedEl = this._hydrateElement(remoteEl);
-      if (hydratedEl) this.em.setElement(hydratedEl);
+      if (hydratedEl) {
+        this.em.setElement(hydratedEl);
+        if (this.isHost) {
+          this.dirtyElements.set(hydratedEl.id, remoteEl);
+          this._scheduleAutoSave();
+        }
+      }
       return;
     }
 
@@ -239,12 +261,20 @@ export class SyncManager {
       
       localEl.updatedAt = remoteEl.updatedAt;
       this.cm.requestStaticRender();
+
+      if (this.isHost) {
+        this.dirtyElements.set(localEl.id, remoteEl);
+        this._scheduleAutoSave();
+      }
     }
   }
 
   _onRemoteDelete(msg) {
     this._tickClock(msg.payload.updatedAt);
     this.em.removeElement(msg.payload.elementId);
+    if (this.isHost) {
+      this.ws.send('element_delete', { elementId: msg.payload.elementId });
+    }
   }
 
   _hydrateElement(data) {

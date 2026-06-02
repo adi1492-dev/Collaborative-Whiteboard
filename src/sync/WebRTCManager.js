@@ -13,6 +13,8 @@ export class WebRTCManager {
     this.peers = new Map();
     // Map of targetUserId -> RTCDataChannel
     this.dataChannels = new Map();
+    // Map of targetUserId -> Array of ICE Candidates (queue before remote sdp is set)
+    this.iceQueues = new Map();
     
     this._bindWebSocketSignals();
   }
@@ -72,6 +74,7 @@ export class WebRTCManager {
       this.peers.get(peerId).close();
       this.peers.delete(peerId);
     }
+    this.iceQueues.delete(peerId);
   }
 
   // --- WebRTC Signaling ---
@@ -139,6 +142,8 @@ export class WebRTCManager {
     
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      await this._processQueuedIceCandidates(peerId, pc);
+      
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       
@@ -160,6 +165,7 @@ export class WebRTCManager {
       console.log(`[WebRTC] Received answer from ${peerId}`);
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        await this._processQueuedIceCandidates(peerId, pc);
       } catch (err) {
         console.error('[WebRTC] Error setting remote description from answer:', err);
       }
@@ -171,13 +177,34 @@ export class WebRTCManager {
     const peerId = msg.userId;
     const pc = this.peers.get(peerId);
     
-    if (pc) {
+    if (pc && pc.remoteDescription && pc.remoteDescription.type) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
       } catch (err) {
         console.error('[WebRTC] Error adding ICE candidate:', err);
       }
+    } else {
+      if (!this.iceQueues.has(peerId)) {
+        this.iceQueues.set(peerId, []);
+      }
+      this.iceQueues.get(peerId).push(payload.candidate);
+      console.log(`[WebRTC] Queued ICE candidate from ${peerId} (waiting for remote sdp)`);
     }
+  }
+
+  async _processQueuedIceCandidates(peerId, pc) {
+    const queue = this.iceQueues.get(peerId);
+    if (!queue || queue.length === 0) return;
+    
+    console.log(`[WebRTC] Processing ${queue.length} queued ICE candidates for ${peerId}`);
+    for (const candidate of queue) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error('[WebRTC] Error adding queued ICE candidate:', err);
+      }
+    }
+    this.iceQueues.delete(peerId);
   }
 
   // --- Data Channel Messaging (P2P) ---

@@ -81,6 +81,18 @@ func main() {
 		})
 	})
 
+	// Client-side logs forwarding for debugging
+	router.POST("/api/logs", func(c *gin.Context) {
+		var req struct {
+			Level   string `json:"level"`
+			Message string `json:"message"`
+		}
+		if err := c.ShouldBindJSON(&req); err == nil {
+			log.Printf("🌐 [FRONTEND] [%s] %s", req.Level, req.Message)
+		}
+		c.Status(http.StatusOK)
+	})
+
 	// Auth routes (public)
 	authGroup := router.Group("/api/auth")
 	{
