@@ -798,6 +798,57 @@ CMD ["/whiteboard"]
 13. Select tool with transform handles
 14. All remaining tools (pen, sticky, text, eraser, pan, image)
 
+---
+
+## [NEW] High Availability (100% Uptime) Architecture
+
+### User Review Required
+
+> [!WARNING]
+> **Vercel Limitations for WebSockets**
+> Vercel is built for Serverless functions, which have strict execution timeouts (typically 10-60 seconds) and do not support long-lived WebSocket connections natively. 
+> 
+> **Proposed Solution**: We can deploy the **Vite Frontend** to Vercel (which it is perfect for), but we must deploy the **Go Backend** to a persistent container service like **Render, Railway, or Fly.io**. Does this hybrid deployment approach work for you?
+
+> [!IMPORTANT]
+> **Dual-Database Auto-Sync Complexity**
+> Building a 100% uptime system that falls back to a local database when MongoDB Atlas goes down is a complex distributed systems challenge.
+> 
+> **Proposed Solution**: 
+> 1. We will integrate **SQLite** (via `mattn/go-sqlite3`) as an embedded local database on the server.
+> 2. When the server detects MongoDB is unreachable, it will gracefully degrade into "Fallback Mode", routing all reads/writes to SQLite.
+> 3. A background **Sync Worker** will ping MongoDB every 5 seconds. Once Mongo is back online, it will automatically replay the offline queue from SQLite back to MongoDB.
+>
+> Are you comfortable with this level of complexity being added to the architecture for the internship project?
+
+### Proposed Dual-Database Architecture
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as Go Server
+    participant SQL as Local SQLite (Fallback)
+    participant MDB as MongoDB Atlas (Primary)
+
+    Note over C,MDB: Normal Operation
+    C->>G: Write Element
+    G->>MDB: Insert/Update (Success)
+    G->>C: Ack
+
+    Note over C,MDB: MongoDB Goes Down
+    C->>G: Write Element
+    G->>MDB: Insert/Update (Timeout/Error)
+    G->>SQL: Save to Offline Queue & Local Cache
+    G->>C: Ack (Saved Locally)
+
+    Note over C,MDB: MongoDB Recovers
+    G->>MDB: Background Ping (Success)
+    G->>SQL: Read Offline Queue
+    G->>MDB: Replay Queued Writes (Batch Sync)
+    G->>SQL: Clear Queue
+    G->>C: Broadcast Sync Complete
+```
+
 ### Phase 3 — Real-Time Collaboration (~25%)
 15. WebSocket Hub + Room + Client architecture (Go)
 16. WebSocket client (JS) with JWT auth + auto-reconnect
