@@ -27,19 +27,27 @@ export class PenTool extends Tool {
       style: { strokeColor: this.color, strokeWidth: this.strokeWidth },
       createdBy: this.cm.syncManager ? this.cm.syncManager.userId : 'local'
     });
+    
+    // INSTANT SAVE / SYNC
+    if (this.cm.syncManager) {
+      this.cm.syncManager.broadcastCreate(this.currentElement);
+    }
   }
 
   onPointerMove(pt, e) {
     if (!this.isDrawing || !this.currentElement) return;
 
-    // Add point
-    // Optimization: only add point if distance is > threshold
     const lastPt = this.currentElement.points[this.currentElement.points.length - 1];
     const dx = pt.x - lastPt.x;
     const dy = pt.y - lastPt.y;
     
     if (dx*dx + dy*dy > 4) { // 2px distance
       this.currentElement.addPoint({ x: pt.x, y: pt.y });
+      
+      // INSTANT SAVE / SYNC (throttle could be added, but fast networks handle this well)
+      if (this.cm.syncManager) {
+        this.cm.syncManager.broadcastUpdate(this.currentElement);
+      }
     }
   }
 
@@ -49,9 +57,14 @@ export class PenTool extends Tool {
         // Commit element
         this.em.setElement(this.currentElement);
         
-        // Broadcast
+        // Final save
         if (this.cm.syncManager) {
-          this.cm.syncManager.broadcastCreate(this.currentElement);
+          this.cm.syncManager.broadcastUpdate(this.currentElement);
+        }
+      } else {
+        // Was just a dot, delete it to prevent ghost elements
+        if (this.cm.syncManager) {
+          this.cm.syncManager.broadcastDelete(this.currentElement.id);
         }
       }
       

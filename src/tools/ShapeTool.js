@@ -38,30 +38,31 @@ export class ShapeTool extends Tool {
       },
       createdBy: this.cm.syncManager ? this.cm.syncManager.userId : 'local'
     });
+    
+    // INSTANT SAVE
+    if (this.cm.syncManager) {
+      this.cm.syncManager.broadcastCreate(this.currentElement);
+    }
   }
 
   onPointerMove(pt, e) {
     if (!this.isDrawing || !this.currentElement || !this.startPt) return;
 
     if (this.shapeType === 'line' || this.shapeType === 'arrow') {
-      // For lines/arrows, width/height act as vector dx/dy
       this.currentElement.width = pt.x - this.startPt.x;
       this.currentElement.height = pt.y - this.startPt.y;
     } else {
-      // For rects/ellipses, maintain positive width/height and adjust x/y
       this.currentElement.x = Math.min(pt.x, this.startPt.x);
       this.currentElement.y = Math.min(pt.y, this.startPt.y);
       
       let w = Math.abs(pt.x - this.startPt.x);
       let h = Math.abs(pt.y - this.startPt.y);
       
-      // Shift key = perfect square/circle
       if (e.shiftKey) {
         const max = Math.max(w, h);
         w = max;
         h = max;
         
-        // Adjust x/y again if drawing backwards
         if (pt.x < this.startPt.x) this.currentElement.x = this.startPt.x - w;
         if (pt.y < this.startPt.y) this.currentElement.y = this.startPt.y - h;
       }
@@ -69,21 +70,29 @@ export class ShapeTool extends Tool {
       this.currentElement.width = w;
       this.currentElement.height = h;
     }
+    
+    // INSTANT SYNC
+    if (this.cm.syncManager) {
+      this.cm.syncManager.broadcastUpdate(this.currentElement);
+    }
   }
 
   onPointerUp(pt, e) {
     if (this.isDrawing && this.currentElement) {
-      // Only commit if it has some size
       if (Math.abs(this.currentElement.width) > 5 || Math.abs(this.currentElement.height) > 5) {
         this.em.setElement(this.currentElement);
         
         if (this.cm.syncManager) {
-          this.cm.syncManager.broadcastCreate(this.currentElement);
+          this.cm.syncManager.broadcastUpdate(this.currentElement);
         }
         
-        // Auto-select after creation
         this.em.select(this.currentElement.id);
         this.inputHandler.setActiveTool('select');
+      } else {
+        // Was too small, destroy it
+        if (this.cm.syncManager) {
+          this.cm.syncManager.broadcastDelete(this.currentElement.id);
+        }
       }
       
       this.isDrawing = false;

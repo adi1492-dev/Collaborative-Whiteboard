@@ -85,12 +85,14 @@ export class SelectTool extends Tool {
           el.x = startPos.x + dx;
           el.y = startPos.y + dy;
           el.updatedAt = Date.now();
+          
+          // INSTANT SYNC
+          if (this.cm.syncManager) {
+            this.cm.syncManager.broadcastUpdate(el);
+          }
         }
       }
       this.cm.requestStaticRender();
-      
-      // Throttle broadcast of moves?
-      // For now, wait until pointer up to broadcast
     } else if (this.isSelecting && this.startPt) {
       this.selectionRect = {
         x: Math.min(pt.x, this.startPt.x),

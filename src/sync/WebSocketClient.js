@@ -38,8 +38,15 @@ export class WebSocketClient {
   disconnect() {
     this.intentionallyClosed = true;
     if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+      const socket = this.ws;
+      this.ws = null; // Detach immediately
+      
+      // Allow 150ms for the OS to flush any remaining packets in the TCP buffer
+      setTimeout(() => {
+        if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+          socket.close();
+        }
+      }, 150);
     }
     this.isConnected = false;
     this.isConnecting = false;
