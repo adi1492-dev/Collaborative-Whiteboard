@@ -28,7 +28,7 @@ export class SyncManager {
     const wsHost = process.env.NODE_ENV === 'production' ? window.location.host : 'localhost:3001';
     const url = `${wsProtocol}//${wsHost}/ws/board/${boardId}`;
     
-    this.ws = new WebSocketClient(url, app.auth.getAccessToken());
+    this.ws = new WebSocketClient(url, () => this.app.auth.getAccessToken());
     
     // Setup Presence
     this.presenceSync = new PresenceSync(this.ws, this.cm);
