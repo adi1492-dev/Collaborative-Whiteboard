@@ -790,13 +790,40 @@ CMD ["/whiteboard"]
 7. Dashboard page with board list + create
 
 ### Phase 2 — Canvas Engine (~25%)
-8. Canvas rendering engine with dual-canvas setup
-9. Transform matrix: pan, zoom, coordinate conversion
-10. Input handler: mouse, touch, keyboard delegation
-11. Grid/dots/lines background renderer
-12. Element base class + freehand + shapes
-13. Select tool with transform handles
-14. All remaining tools (pen, sticky, text, eraser, pan, image)
+793. Canvas rendering engine with dual-canvas setup
+794. Transform matrix: pan, zoom, coordinate conversion
+795. Input handler: mouse, touch, keyboard delegation
+796. Grid/dots/lines background renderer
+797. Element base class + freehand + shapes
+798. Select tool with transform handles
+799. All remaining tools (pen, sticky, text, eraser, pan, image)
+
+### Phase 7 — Advanced Canvas Tools (Paint & PowerPoint Capabilities) 🎨
+This phase focuses on upgrading the whiteboard into a professional-grade tool by adding capabilities found in MS Paint and PowerPoint.
+
+#### 1. Pen Tool Bug Fixes & Improvements
+- **Coordinate Glitch Fix**: The `FreehandElement` currently mixes absolute and relative coordinates when `addPoint` is called, causing the bounding box to expand infinitely and misplacing strokes. This will be fixed immediately by normalizing all points relative to the element origin.
+- **Smooth Curves**: Upgrade the rendering from quadratic to cubic Bézier curves (or Catmull-Rom splines) for buttery-smooth handwriting.
+
+#### 2. Advanced Shapes (PowerPoint style)
+- Expand `ShapeTool` and `ShapeElement` to support:
+  - **Triangle** (Isosceles and Right-angled)
+  - **Diamond / Rhombus**
+  - **Star** (5-point)
+  - **Polygon** (Hexagon/Pentagon)
+
+#### 3. Dynamic Property Context Menu
+- Upgrade the `Toolbar` to include a dynamic properties popover:
+  - **Color Picker**: Preset swatches (primary, secondary, danger, etc.) + custom hex input for both **Stroke** and **Fill**.
+  - **Stroke Width Slider**: Adjust thickness from 1px to 20px.
+  - **Text Formatting**: Bold, Italic, Strikethrough, and Font Size drop-down for Text Elements and Sticky Notes.
+
+#### 4. Image Support
+- **Image Tool**: Click to open a file dialog, upload an image via the `/api/upload` endpoint, and place it on the canvas.
+- Support resizing and locking images as background references.
+
+#### 5. Enhanced Eraser
+- Upgrade from a basic "click to delete" to a **Stroke Eraser**: dragging the eraser over any part of a stroke/shape will instantly select and delete the intersected element, matching professional whiteboards.
 
 ---
 

@@ -125,6 +125,9 @@ export class CanvasManager {
   render() {
     // 1. Render static layer if dirty (or zoomed/panned)
     if (this.needsStaticRender) {
+      // Reset transform before clearing so we clear the whole screen
+      this.transform.resetContext(this.staticCtx);
+      
       // Clear with background color based on theme
       this.staticCtx.fillStyle = this.isDarkMode ? '#131313' : '#f8f9ff';
       this.staticCtx.fillRect(0, 0, this.width, this.height);

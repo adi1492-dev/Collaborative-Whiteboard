@@ -4,6 +4,12 @@
  * for Last-Writer-Wins (LWW) conflict resolution.
  */
 import { PresenceSync } from './PresenceSync.js';
+import { WebSocketClient } from './WebSocketClient.js';
+import { FreehandElement } from '../elements/FreehandElement.js';
+import { ShapeElement } from '../elements/ShapeElement.js';
+import { StickyNote } from '../elements/StickyNote.js';
+import { TextElement } from '../elements/TextElement.js';
+import { Element } from '../elements/Element.js';
 // CRDTSync will be imported in Phase 4
 
 export class SyncManager {
@@ -22,7 +28,7 @@ export class SyncManager {
     const wsHost = process.env.NODE_ENV === 'production' ? window.location.host : 'localhost:3001';
     const url = `${wsProtocol}//${wsHost}/ws/board/${boardId}`;
     
-    this.ws = new (require('./WebSocketClient.js').WebSocketClient)(url, app.auth.getAccessToken());
+    this.ws = new WebSocketClient(url, app.auth.getAccessToken());
     
     // Setup Presence
     this.presenceSync = new PresenceSync(this.ws, this.cm);
@@ -145,16 +151,16 @@ export class SyncManager {
     // we use a factory pattern based on type
     switch (data.type) {
       case 'freehand':
-        return new (require('../elements/FreehandElement.js').FreehandElement)(data);
+        return new FreehandElement(data);
       case 'shape':
-        return new (require('../elements/ShapeElement.js').ShapeElement)(data);
+        return new ShapeElement(data);
       case 'sticky':
-        return new (require('../elements/StickyNote.js').StickyNote)(data);
+        return new StickyNote(data);
       case 'text':
-        return new (require('../elements/TextElement.js').TextElement)(data);
+        return new TextElement(data);
       default:
         // Fallback to base element (renders nothing, but holds state)
-        return new (require('../elements/Element.js').Element)(data);
+        return new Element(data);
     }
   }
 

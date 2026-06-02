@@ -79,14 +79,16 @@ export class Transform {
    * Apply transform to a canvas context.
    */
   applyToContext(ctx) {
-    ctx.setTransform(this.scale, 0, 0, this.scale, this.x, this.y);
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(this.scale * dpr, 0, 0, this.scale * dpr, this.x * dpr, this.y * dpr);
   }
 
   /**
    * Reset context transform to identity.
    */
   resetContext(ctx) {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   /**

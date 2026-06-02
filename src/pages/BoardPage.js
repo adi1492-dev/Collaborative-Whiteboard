@@ -128,6 +128,11 @@ export class BoardPage {
     const canvasContainer = this.root.querySelector('#canvas-container');
     const uiContainer = this.root.querySelector('#ui-container');
 
+    if (!canvasContainer) {
+      console.warn("Canvas container not found, aborting engine init (page probably navigated away)");
+      return;
+    }
+
     // 1. Initialize Canvas Manager
     this.cm = new CanvasManager(canvasContainer, this.boardId);
     this.cm.setBackground(this.boardData.background);
