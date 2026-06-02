@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/canvasflow/server/auth"
+	"github.com/canvasflow/server/database"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -178,8 +179,25 @@ func (c *Client) writePump() {
 // handleMessage routes incoming messages to the appropriate handler.
 func (c *Client) handleMessage(msg Message) {
 	switch msg.Type {
-	case "element_create", "element_update", "element_delete", "element_reorder":
+	case "element_create", "element_update", "element_reorder":
+		// Save to HA Dual-Database
+		var element map[string]interface{}
+		if err := json.Unmarshal(msg.Payload, &element); err == nil {
+			database.SafeSaveElement(element)
+		}
+		
 		// Broadcast element operations to all other clients in the room
+		if c.Room != nil {
+			c.Room.Broadcast(msg, c)
+		}
+		
+	case "element_delete":
+		var payload struct {
+			ElementID string `json:"elementId"`
+		}
+		if err := json.Unmarshal(msg.Payload, &payload); err == nil {
+			database.SafeDeleteElement(c.BoardID, payload.ElementID)
+		}
 		if c.Room != nil {
 			c.Room.Broadcast(msg, c)
 		}

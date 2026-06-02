@@ -159,6 +159,24 @@ export class BoardPage {
 
     // 6. Initialize Sync Layer
     this.sync = new SyncManager(this.app, this.boardId, this.cm);
+    
+    // Bind HA Status UI
+    const statusDot = this.root.querySelector('#latency-indicator');
+    if (statusDot) {
+      this.sync.ws.on('connected', () => {
+        statusDot.className = 'status-dot status-green';
+        statusDot.title = 'Online & Synced';
+      });
+      this.sync.ws.on('disconnected', () => {
+        statusDot.className = 'status-dot status-red';
+        statusDot.title = 'Offline (Saving Locally)';
+      });
+      this.sync.ws.on('syncing', () => {
+        statusDot.className = 'status-dot status-yellow';
+        statusDot.title = 'Syncing...';
+      });
+    }
+
     // 7. Initialize AI Manager
     this.ai = new AIManager(this.app, this);
     
