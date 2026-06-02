@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CanvasFlow - Infinite Collaboration</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@500;600&amp;family=Inter:wght@400;600;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-secondary-fixed-variant": "#004493",
+                        "on-surface": "#0b1c30",
+                        "surface-bright": "#f8f9ff",
+                        "surface": "#f8f9ff",
+                        "outline": "#777585",
+                        "on-tertiary-fixed": "#310048",
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#cbdbf5",
+                        "surface-container-highest": "#d3e4fe",
+                        "on-error-container": "#93000a",
+                        "on-background": "#0b1c30",
+                        "surface-tint": "#4f4ccd",
+                        "surface-container": "#e5eeff",
+                        "on-primary-fixed-variant": "#3631b4",
+                        "on-secondary-container": "#fefcff",
+                        "primary-fixed-dim": "#c2c1ff",
+                        "primary-container": "#5856d6",
+                        "on-primary-fixed": "#0c006a",
+                        "surface-container-lowest": "#ffffff",
+                        "outline-variant": "#c7c4d6",
+                        "error-container": "#ffdad6",
+                        "surface-container-high": "#dce9ff",
+                        "on-tertiary-fixed-variant": "#7201a2",
+                        "inverse-surface": "#213145",
+                        "error": "#ba1a1a",
+                        "secondary": "#0058bc",
+                        "inverse-primary": "#c2c1ff",
+                        "inverse-on-surface": "#eaf1ff",
+                        "background": "#f8f9ff",
+                        "on-secondary-fixed": "#001a41",
+                        "tertiary-container": "#9739c6",
+                        "surface-container-low": "#eff4ff",
+                        "tertiary-fixed-dim": "#e8b3ff",
+                        "primary": "#3f3bbd",
+                        "on-tertiary-container": "#f8deff",
+                        "surface-variant": "#d3e4fe",
+                        "tertiary": "#7c17ab",
+                        "on-primary-container": "#e7e4ff",
+                        "primary-fixed": "#e2dfff",
+                        "tertiary-fixed": "#f6d9ff",
+                        "on-tertiary": "#ffffff",
+                        "secondary-fixed": "#d8e2ff",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "secondary-container": "#0070eb",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "on-surface-variant": "#464554"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "touch-target": "2.5rem",
+                        "grid-unit": "8px",
+                        "toolbar-gap": "0.5rem",
+                        "panel-padding": "1rem",
+                        "canvas-margin": "1.5rem"
+                    },
+                    fontFamily: {
+                        "label-md": ["Geist"],
+                        "body-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-sm": ["Geist"],
+                        "body-lg": ["Inter"]
+                    },
+                    fontSize: {
+                        "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "500" }],
+                        "body-sm": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "headline-lg": ["30px", { lineHeight: "38px", letterSpacing: "-0.02em", fontWeight: "600" }],
+                        "label-sm": ["10px", { lineHeight: "12px", letterSpacing: "0.02em", fontWeight: "600" }],
+                        "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-background');
+            overflow-x: hidden;
+            background-image: 
+                linear-gradient(to right, theme('colors.outline-variant') 1px, transparent 1px),
+                linear-gradient(to bottom, theme('colors.outline-variant') 1px, transparent 1px);
+            background-size: 40px 40px;
+            background-position: center center;
+            opacity: 0.95;
+        }
+        
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05);
+        }
+
+        .cursor-indicator {
+            position: absolute;
+            transition: all 0.1s ease;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .floating-element {
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        .floating-element-delayed {
+            animation: float 6s ease-in-out 3s infinite;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, theme('colors.primary'), theme('colors.secondary'));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen relative font-body-lg text-body-lg">
+<!-- TopNavBar -->
+<nav class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-canvas-margin py-toolbar-gap bg-surface/80 backdrop-blur-md shadow-sm">
+<div class="flex items-center gap-6">
+<span class="text-headline-md font-headline-md font-black text-primary">CanvasFlow</span>
+<div class="hidden md:flex gap-4">
+<!-- Dashboard Active for Landing Page intent mapping to closest primary destination -->
+<a class="text-primary border-b-2 border-primary pb-1 text-label-md font-label-md hover:bg-surface-variant/50 rounded-lg px-2 py-1 transition-transform scale-95 duration-100" href="#">Dashboard</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors text-label-md font-label-md hover:bg-surface-variant/50 rounded-lg px-2 py-1" href="#">Templates</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors text-label-md font-label-md hover:bg-surface-variant/50 rounded-lg px-2 py-1" href="#">Settings</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="hidden md:flex items-center bg-surface-container rounded-full px-4 py-2 border border-outline-variant focus-within:border-primary transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant mr-2" style="font-size: 20px;">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-body-sm font-body-sm text-on-surface placeholder-on-surface-variant w-48" placeholder="Search canvas..." type="text"/>
+</div>
+<button class="bg-primary text-on-primary text-label-md font-label-md px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors shadow-sm">New Board</button>
+<div class="flex gap-2">
+<button class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant/50 transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant/50 transition-colors">
+<span class="material-symbols-outlined">help</span>
+</button>
+</div>
+<div class="w-10 h-10 rounded-full overflow-hidden border border-outline-variant">
+<img alt="User profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida/AP1WRLtcFHlTlX8tXgvngQ23pLHQtUzV24droPVoS3-c2BxCZYgmaaDuGBJP4LGygEhaTigZ3Q7mh7-_y957iYOtuEEjWfvzLaRwzrfD2ojKvMfSduN6Xy9Kc5DGTKeYE1d05yf-DfQ263eOzrEm3k004tWHQ2qygh7riFNMJYw_0KxaSHgdAgMmU6tJpe_ttqnfr7mjRug95iD2_NoJxBCowR-dzBUc5e_bNTO9WvcE9lpyQh13czTNpXB41A9M"/>
+</div>
+</div>
+</nav>
+<!-- SideNavBar (Simulated as if viewing a project for demo purposes on landing page) -->
+<aside class="fixed left-canvas-margin top-1/2 -translate-y-1/2 flex flex-col gap-toolbar-gap p-2 z-40 bg-surface-container/90 backdrop-blur-xl shadow-lg rounded-full w-16">
+<div class="flex flex-col items-center gap-4 mb-4 mt-2">
+<div class="w-10 h-10 rounded-lg overflow-hidden bg-primary-container text-on-primary-container flex items-center justify-center text-label-md font-label-md font-bold">
+                PA
+            </div>
+</div>
+<div class="flex flex-col items-center gap-2 flex-grow">
+<!-- Select active by default in drawing tool context -->
+<button class="bg-primary text-on-primary rounded-full w-touch-target h-touch-target flex items-center justify-center hover:bg-surface-variant transition-all scale-110 duration-200" title="Select">
+<span class="material-symbols-outlined">near_me</span>
+</button>
+<button class="text-on-surface-variant w-touch-target h-touch-target flex items-center justify-center hover:bg-surface-variant rounded-full transition-all" title="Draw">
+<span class="material-symbols-outlined">draw</span>
+</button>
+<button class="text-on-surface-variant w-touch-target h-touch-target flex items-center justify-center hover:bg-surface-variant rounded-full transition-all" title="Shapes">
+<span class="material-symbols-outlined">category</span>
+</button>
+<button class="text-on-surface-variant w-touch-target h-touch-target flex items-center justify-center hover:bg-surface-variant rounded-full transition-all" title="Sticky Notes">
+<span class="material-symbols-outlined">sticky_note_2</span>
+</button>
+<button class="text-on-surface-variant w-touch-target h-touch-target flex items-center justify-center hover:bg-surface-variant rounded-full transition-all" title="Images">
+<span class="material-symbols-outlined">image</span>
+</button>
+</div>
+<div class="flex flex-col items-center gap-2 mt-4 mb-2">
+<button class="text-on-surface-variant w-touch-target h-touch-target flex items-center justify-center hover:bg-surface-variant rounded-full transition-all" title="Zoom In">
+<span class="material-symbols-outlined">add</span>
+</button>
+<button class="text-on-surface-variant w-touch-target h-touch-target flex items-center justify-center hover:bg-surface-variant rounded-full transition-all" title="Zoom Out">
+<span class="material-symbols-outlined">remove</span>
+</button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="pt-32 pb-24 px-8 md:px-24 ml-20 relative">
+<!-- Hero Section -->
+<section class="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-12 mb-32 relative">
+<div class="lg:w-1/2 flex flex-col gap-6 z-10">
+<div class="inline-flex items-center gap-2 bg-surface-container-high px-4 py-2 rounded-full w-fit">
+<span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+<span class="text-label-md font-label-md text-on-surface-variant">v2.0 Now Live - Smarter Connectors</span>
+</div>
+<h1 class="text-[3.5rem] leading-[4rem] font-bold text-on-surface tracking-tight" style="font-family: 'Inter', sans-serif;">
+                    The infinite space where <span class="gradient-text">ideas click.</span>
+</h1>
+<p class="text-[1.25rem] leading-relaxed text-on-surface-variant max-w-lg">
+                    CanvasFlow is the frictionless visual workspace for product teams. Real-time collaboration without the clutter. High-performance diagramming at infinite scale.
+                </p>
+<div class="flex gap-4 mt-4">
+<button class="bg-primary text-on-primary text-body-lg font-body-lg px-8 py-4 rounded-lg hover:bg-primary/90 transition-transform hover:-translate-y-1 shadow-lg font-semibold">Start Free Workspace</button>
+<button class="bg-surface-container text-on-surface text-body-lg font-body-lg px-8 py-4 rounded-lg hover:bg-surface-variant transition-colors border border-outline-variant font-semibold">Watch Demo</button>
+</div>
+</div>
+<!-- Living Whiteboard Preview (Hero Graphic) -->
+<div class="lg:w-1/2 relative h-[500px] w-full rounded-2xl glass-panel overflow-hidden border border-surface-container-high shadow-2xl">
+<!-- Background Grid specific to this element -->
+<div class="absolute inset-0" style="background-image: radial-gradient(theme('colors.outline-variant') 1px, transparent 1px); background-size: 20px 20px; opacity: 0.5;"></div>
+<!-- Mock Elements on Canvas -->
+<div class="absolute top-20 left-10 p-4 bg-tertiary-container text-on-tertiary-container rounded-lg shadow-md w-48 floating-element" style="transform: rotate(-2deg);">
+<p class="text-body-sm font-body-sm font-medium">1. Map user journey here</p>
+</div>
+<div class="absolute top-48 left-32 p-4 bg-surface-container-highest border-2 border-primary rounded-xl shadow-md w-64 floating-element-delayed">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-primary">database</span>
+<span class="text-label-md font-label-md text-on-surface font-bold">User Service</span>
+</div>
+<div class="h-2 bg-surface-dim rounded w-full mb-2"></div>
+<div class="h-2 bg-surface-dim rounded w-3/4"></div>
+</div>
+<!-- SVG Connector -->
+<svg class="absolute top-[140px] left-[150px] w-64 h-32 pointer-events-none" viewbox="0 0 200 100">
+<path class="animate-[dash_2s_linear_infinite]" d="M 10 10 C 50 80, 150 20, 190 90" fill="transparent" stroke="theme('colors.primary')" stroke-dasharray="5,5" stroke-width="3"></path>
+<polygon fill="theme('colors.primary')" points="185,85 195,95 180,95" transform="rotate(-15 190 90)"></polygon>
+</svg>
+<div class="absolute bottom-20 right-20 p-6 bg-error-container text-on-error-container rounded-lg shadow-md w-56 floating-element" style="transform: rotate(3deg);">
+<p class="text-body-lg font-body-lg font-medium">Needs auth flow review!</p>
+</div>
+<!-- Simulated Presence Cursors -->
+<div class="cursor-indicator" style="top: 30%; left: 60%;">
+<svg fill="none" height="24" viewbox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+<path d="M5.5 3L18.5 12L11 14L8 21L5.5 3Z" fill="theme('colors.tertiary')" stroke="white" stroke-width="2"></path>
+</svg>
+<div class="bg-tertiary text-on-tertiary text-label-sm font-label-sm px-2 py-1 rounded shadow-sm ml-4 -mt-2 w-fit">Sarah (Design)</div>
+</div>
+<div class="cursor-indicator" id="cursor2" style="top: 70%; left: 20%;">
+<svg fill="none" height="24" viewbox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+<path d="M5.5 3L18.5 12L11 14L8 21L5.5 3Z" fill="theme('colors.secondary')" stroke="white" stroke-width="2"></path>
+</svg>
+<div class="bg-secondary text-on-secondary text-label-sm font-label-sm px-2 py-1 rounded shadow-sm ml-4 -mt-2 w-fit">Mike (Dev)</div>
+</div>
+</div>
+</section>
+<!-- Value Props Bento Grid -->
+<section class="max-w-6xl mx-auto mb-32">
+<h2 class="text-headline-lg font-headline-lg text-on-surface mb-12 text-center font-bold">Built for speed. Designed for clarity.</h2>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Card 1 -->
+<div class="col-span-1 md:col-span-2 bg-surface-container-lowest border border-surface-container-high rounded-2xl p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+<div class="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -mr-20 -mt-20 group-hover:bg-primary/10 transition-colors"></div>
+<div class="relative z-10 h-full flex flex-col justify-between">
+<div>
+<span class="material-symbols-outlined text-primary mb-4" style="font-size: 32px; font-variation-settings: 'FILL' 1;">groups</span>
+<h3 class="text-headline-md font-headline-md text-on-surface mb-3">Real-time Synchronization</h3>
+<p class="text-body-lg font-body-lg text-on-surface-variant max-w-md">Collaborate with hundreds of team members simultaneously with zero lag. Our proprietary sync engine handles complex vector data effortlessly.</p>
+</div>
+<div class="mt-8 flex -space-x-4">
+<img alt="Avatar 1" class="w-12 h-12 rounded-full border-2 border-surface-container-lowest object-cover" src="https://lh3.googleusercontent.com/aida/AP1WRLuvJdG5m3bXHZyYcOR3cbzNv5MwDW8Z4vgHyeUWwqPK_PuZI1MzS_S19aeEMiUbhpBgFQBgKaoRFumtyc23XC0gruCJ6_FEZFTZJJ93XbYwABpW4REQdeAJVDwfjeC2o7S-HKIJHOgrZ7vyAUqIP-pXnQA2E_3h37aqVP5sB75EReikmkiq7RrYFX6D-fjToHYfnmZLekhFwVHPFFYkN2Ly8Yv-zcvxp4VrkkGpd8cXb751SU4UydQz7VHV"/>
+<img alt="Avatar 2" class="w-12 h-12 rounded-full border-2 border-surface-container-lowest object-cover" src="https://lh3.googleusercontent.com/aida/AP1WRLtA_BvMsOaH3l7RJaRi6Thz42Pcv_7104jQe5vbPH8qKzqIhyQAKYm5Ibm-WAEKT2Jre1BXRQ80ZppygHuEFDvR3820kdbeWVTqeac3K1f7sFdlFb9TnTfCgRl7SBuDmkzNfMuZId7emKEiKCjna0WcCfVT3XkvfxxAp7m4_G4MyppsRLRaqu9OzGGD27xalsEZ0_1keKwzkTlvA9jCMykv9PYHuJPi8SFPFUxlxvFP3soA3Kal4QiwHVwA"/>
+<img alt="Avatar 3" class="w-12 h-12 rounded-full border-2 border-surface-container-lowest object-cover" src="https://lh3.googleusercontent.com/aida/AP1WRLuOjwTGZAVHM5iBu6NwhrhEW-nuvi4mKeLPIJH2Wnw4kcmY7OXWDw4Kjvwth2jp2O2jxqeRXUQANZBJGVDs6HWZr7d8ON_oD1fN76doA8Zad2kcWKxlTny4P1mwALIeeK2gkC5WARHQGGx7inwi5wGtl6ysbxNO_N3b4AY2pomQgTtYDjb_mlwKYChscC2MZntCQVauw4b9UwwlTfv2sWKfuwI0E2a6NooEDcuSMc-sL9tbuMb2TRSCgwU"/>
+<div class="w-12 h-12 rounded-full border-2 border-surface-container-lowest bg-surface-variant flex items-center justify-center text-label-md font-label-md font-bold text-on-surface-variant">+42</div>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="col-span-1 bg-surface-container-lowest border border-surface-container-high rounded-2xl p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+<div class="relative z-10">
+<span class="material-symbols-outlined text-secondary mb-4" style="font-size: 32px; font-variation-settings: 'FILL' 1;">route</span>
+<h3 class="text-headline-md font-headline-md text-on-surface mb-3">Smart Connectors</h3>
+<p class="text-body-sm font-body-sm text-on-surface-variant">Lines that snap, route around objects, and maintain logic when components move.</p>
+<div class="mt-6 p-4 bg-surface-container rounded-lg border border-outline-variant/30 flex justify-between items-center">
+<div class="w-10 h-10 bg-primary/20 rounded border border-primary flex items-center justify-center">A</div>
+<svg class="w-16 h-4" viewbox="0 0 60 10">
+<path d="M 0 5 L 60 5" marker-end="url(#arrowhead)" stroke="theme('colors.on-surface-variant')" stroke-width="2"></path>
+<defs>
+<marker id="arrowhead" markerheight="5" markerwidth="5" orient="auto" refx="4" refy="2.5">
+<polygon fill="theme('colors.on-surface-variant')" points="0 0, 5 2.5, 0 5"></polygon>
+</marker>
+</defs>
+</svg>
+<div class="w-10 h-10 bg-secondary/20 rounded border border-secondary flex items-center justify-center">B</div>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="col-span-1 bg-surface-container-lowest border border-surface-container-high rounded-2xl p-8 shadow-sm hover:shadow-md transition-shadow">
+<span class="material-symbols-outlined text-tertiary mb-4" style="font-size: 32px; font-variation-settings: 'FILL' 1;">zoom_out_map</span>
+<h3 class="text-headline-md font-headline-md text-on-surface mb-3">Infinite Canvas</h3>
+<p class="text-body-sm font-body-sm text-on-surface-variant">Never run out of space. Pan and zoom seamlessly from high-level architecture down to granular details.</p>
+</div>
+<!-- Card 4 (Placeholder Image style) -->
+<div class="col-span-1 md:col-span-2 bg-surface-container-lowest border border-surface-container-high rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row">
+<div class="p-8 md:w-1/2 flex flex-col justify-center">
+<span class="material-symbols-outlined text-on-secondary-fixed-variant mb-4" style="font-size: 32px; font-variation-settings: 'FILL' 1;">integration_instructions</span>
+<h3 class="text-headline-md font-headline-md text-on-surface mb-3">Developer Native</h3>
+<p class="text-body-sm font-body-sm text-on-surface-variant mb-4">Export directly to React components, Mermaid.js diagrams, or raw JSON architecture blueprints.</p>
+<a class="text-primary text-label-md font-label-md font-semibold hover:underline inline-flex items-center" href="#">View API Docs <span class="material-symbols-outlined text-sm ml-1">arrow_forward</span></a>
+</div>
+<div class="md:w-1/2 bg-surface-variant flex items-center justify-center p-6 relative">
+<div class="w-full h-full rounded-lg bg-[#1e1e1e] p-4 text-[#d4d4d4] font-mono text-xs overflow-hidden shadow-inner relative">
+<div class="flex gap-1 mb-2">
+<div class="w-3 h-3 rounded-full bg-red-500"></div>
+<div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+<div class="w-3 h-3 rounded-full bg-green-500"></div>
+</div>
+<pre><code>{
+  "canvas": "prod-arch-v2",
+  "nodes": [
+    {
+      "id": "node_1",
+      "type": "database",
+      "position": { "x": 120, "y": 450 }
+    }
+  ]
+}</code></pre>
+<div class="absolute bottom-0 right-0 w-full h-12 bg-gradient-to-t from-[#1e1e1e] to-transparent"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<style>
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -10;
+            }
+        }
+    </style>
+<script>
+        // Simple ambient animation for mock cursor
+        document.addEventListener('DOMContentLoaded', () => {
+            const cursor = document.getElementById('cursor2');
+            let angle = 0;
+            
+            setInterval(() => {
+                angle += 0.05;
+                const x = 20 + Math.sin(angle) * 10;
+                const y = 70 + Math.cos(angle * 0.8) * 5;
+                cursor.style.left = `${x}%`;
+                cursor.style.top = `${y}%`;
+            }, 50);
+        });
+    </script>
+</body></html>

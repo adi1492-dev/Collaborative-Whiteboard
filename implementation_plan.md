@@ -629,3 +629,204 @@ MAX_UPLOAD_SIZE=10485760
 - Test reconnection recovery (disconnect network, reconnect)
 - Test shareable link generation and permission enforcement
 - Test board collaboration: owner invites collaborator by email
+
+---
+
+## Requirements Traceability Matrix
+
+### Core Requirements
+
+| # | Requirement | Plan Coverage | Location in Plan | Status |
+|---|------------|---------------|------------------|--------|
+| 1 | Infinite canvas with smooth pan/zoom (transform matrix) | ✅ Full | Canvas — Transform.js, dual-canvas, viewport culling | Covered |
+| 2 | Freehand pen with pressure sensitivity simulation | ✅ Full | FreehandElement.js + PenTool.js | Covered |
+| 3 | Shape tools (rectangle, circle, arrow, line) | ✅ Full | ShapeElement.js + ShapeTool.js | Covered |
+| 4 | Sticky notes (colored, resizable) | ✅ Full | StickyNote.js + StickyTool.js | Covered |
+| 5 | Text boxes | ✅ Full | TextElement.js + TextTool.js | Covered |
+| 6 | Image uploader | ✅ Full | ImageElement.js + ImageTool.js + upload handler | Covered |
+| 7 | Real-time sync via WebSocket | ✅ Full | WebSocket Hub/Client/Room (Go) + SyncManager.js | Covered |
+| 8 | Cursor presence | ✅ Full | presence.go + PresenceSync.js + UserPresence.js | Covered |
+| 9 | Shareable board links with view/edit permissions | ✅ Full | Board model `shareLink` + `sharePermission` + ShareModal.js | Covered |
+| 10 | Layer management with z-order controls | ✅ Full | LayerPanel.js + `zIndex` on elements + `[`/`]` shortcuts | Covered |
+| 11 | Undo/redo history per user | ✅ Full | HistoryManager.js with inverse operations | Covered |
+| 12 | Auto-save with reconnection recovery | ⚠️ Partial | Mentioned in Phase 4, details below in Gap Analysis | Needs Detail |
+
+### Constraints
+
+| # | Constraint | Plan Coverage | Notes |
+|---|-----------|---------------|-------|
+| C1 | 60fps with 1000+ elements | ✅ Full | Dual-canvas, viewport culling, spatial index | Performance test in verification |
+| C2 | 10+ concurrent users per board | ✅ Full | Go goroutines + room isolation | No load test script yet |
+| C3 | Sync latency < 100ms | ⚠️ Partial | Architecture supports it | No explicit latency measurement |
+| C4 | Export must preserve vector quality (SVG-based) | ✅ Full | SVGExporter.js generates SVG DOM directly | Covered |
+
+### Bonus Features
+
+| # | Feature | Plan Coverage | Notes |
+|---|---------|---------------|-------|
+| B1 | Template boards (brainstorming, wireframe, retro, mindmap) | ✅ Full | TemplateModal.js + Phase 4 | Covered |
+| B2 | Comment threads on elements | ❌ Missing | Stretch goal — add after Phase 4 if time permits |
+| B3 | Dark mode + canvas backgrounds (grid, dots, lined) | ✅ Full | Dark mode default + GridRenderer.js + board.background | Covered |
+
+### Deliverables
+
+| # | Deliverable | Plan Coverage | Notes |
+|---|------------|---------------|-------|
+| D1 | Git repository with full source code | ✅ | `.git` already initialized | Ready |
+| D2 | Live deployment URL | ✅ | Deployment strategy added below | Covered |
+| D3 | ARCHITECTURE.md | ✅ Full | Listed in Phase 4 with content outline | Covered |
+| D4 | AI declaration and prompts/ folder | ✅ Full | `prompts/ai-declaration.md` planned | Covered |
+
+---
+
+## Gap Analysis & Resolutions
+
+### Gap 1: Auto-Save Implementation (RESOLVED)
+
+**Strategy**: Debounced save-on-change (500ms debounce)
+
+- Every element create/update/delete triggers a debounced save to MongoDB via WebSocket server
+- Server-side: Room batches pending changes, flushes to MongoDB every 500ms or on room idle
+- Client-side: On WebSocket reconnect, client sends `sync_request` message
+- Server responds with full board state (all elements) + current Lamport timestamp
+- Client reconciles: server state wins for any conflicts (LWW), local-only changes are re-sent
+- Visual indicator in UI: "Saving..." → "Saved ✓" with fade animation
+
+### Gap 2: Deployment Strategy (RESOLVED)
+
+**Approach**: Single binary deployment — Go serves Vite built frontend as static files
+
+```
+Deployment Architecture:
+┌─────────────────────────────────────┐
+│         Go Binary (single)          │
+│  ┌────────────┐  ┌───────────────┐  │
+│  │  REST API   │  │ Static Files  │  │
+│  │  WebSocket  │  │ (Vite build)  │  │
+│  └────────────┘  └───────────────┘  │
+└──────────────┬──────────────────────┘
+               │
+       ┌───────┴───────┐
+       │   MongoDB      │
+       │  (Atlas Free)  │
+       └───────────────┘
+```
+
+- **Build**: `npm run build` → `dist/` folder, then `go build` embeds or serves `dist/`
+- **Hosting**: Railway / Render / Fly.io (free tier)
+  - Go binary serves both API and static frontend on single port
+  - MongoDB Atlas free tier (512MB) for database
+- **Docker**: Add `Dockerfile` for containerized deployment
+- **Environment**: Production `.env` with Atlas connection string + secrets
+
+#### [NEW] Dockerfile
+```dockerfile
+# Multi-stage: build frontend, build Go, run
+FROM node:20-alpine AS frontend
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY src/ src/
+COPY index.html vite.config.js ./
+RUN npm run build
+
+FROM golang:1.22-alpine AS backend
+WORKDIR /app
+COPY server/ server/
+WORKDIR /app/server
+RUN go mod download
+RUN CGO_ENABLED=0 go build -o /whiteboard .
+
+FROM alpine:3.19
+COPY --from=backend /whiteboard /whiteboard
+COPY --from=frontend /app/dist /dist
+EXPOSE 3001
+CMD ["/whiteboard"]
+```
+
+### Gap 3: Conflict Resolution Details (RESOLVED)
+
+**Strategy**: Property-level LWW with Lamport timestamps
+
+- Each element property change carries a Lamport timestamp
+- When two users edit the same element simultaneously:
+  - If they edit **different properties** (e.g., one moves, one changes color) → both apply
+  - If they edit the **same property** → highest Lamport timestamp wins
+- Lamport counter: each client maintains a local counter, incremented on every operation, set to `max(local, received) + 1` on message receipt
+- Server stores the latest timestamp per element property in the `elements` collection (`updatedAt` field becomes a per-property map when needed)
+
+### Gap 4: Latency Verification (RESOLVED)
+
+- Add `timestamp` to every WebSocket message (client-side `Date.now()`)
+- Server logs round-trip time for element operations
+- Client-side: measure time between sending operation and receiving server acknowledgment
+- Display latency indicator in UI (green < 50ms, yellow < 100ms, red > 100ms)
+
+---
+
+## Risk Assessment
+
+| Risk | Probability | Impact | Mitigation |
+|------|------------|--------|-----------|
+| Canvas performance degrades with 1000+ elements | Medium | High | Viewport culling + spatial indexing; verify with performance test |
+| WebSocket message ordering issues | Medium | High | Lamport timestamps + property-level LWW + sequence numbers |
+| MongoDB connection failures in dev | Low | Medium | In-memory fallback mode planned |
+| JWT token expiry during active editing | Medium | Medium | Auto-refresh before expiry in AuthManager |
+| Image upload size overwhelming server | Low | Medium | 10MB limit enforced; consider CDN for production |
+| Sync latency exceeds 100ms under load | Medium | Medium | Throttle presence to 30fps; batch element updates |
+| Data loss on simultaneous edits | Medium | High | Property-level LWW ensures granular conflict resolution |
+
+---
+
+## Updated Implementation Order
+
+### Phase 1 — Foundation & Auth (~30%)
+1. Go project setup (go mod, Gin, gorilla/websocket)
+2. MongoDB connection + models + indexes
+3. Auth system: Argon2id hashing, JWT generation/validation, middleware
+4. Auth endpoints: register, login, refresh, logout, me
+5. Vite frontend setup with proxy to Go server
+6. Login + Register pages with full validation
+7. Dashboard page with board list + create
+
+### Phase 2 — Canvas Engine (~25%)
+8. Canvas rendering engine with dual-canvas setup
+9. Transform matrix: pan, zoom, coordinate conversion
+10. Input handler: mouse, touch, keyboard delegation
+11. Grid/dots/lines background renderer
+12. Element base class + freehand + shapes
+13. Select tool with transform handles
+14. All remaining tools (pen, sticky, text, eraser, pan, image)
+
+### Phase 3 — Real-Time Collaboration (~25%)
+15. WebSocket Hub + Room + Client architecture (Go)
+16. WebSocket client (JS) with JWT auth + auto-reconnect
+17. Sync protocol: element create/update/delete/reorder with Lamport timestamps
+18. Property-level LWW conflict resolution
+19. Cursor presence: broadcast + render remote cursors at 30fps
+20. Board REST API: CRUD, share links, collaborator management
+21. Layer panel + property panel
+22. Undo/redo history
+
+### Phase 4 — Polish & Deliverables (~20%)
+23. Auto-save with debounced save-on-change (500ms)
+24. Reconnection recovery: full state sync on reconnect
+25. Export: PNG, SVG, PDF
+26. Template boards (brainstorming, wireframe, retro, mindmap)
+27. Dark/light mode toggle
+28. Share modal with permissions
+29. Latency indicator in UI
+30. ARCHITECTURE.md + AI declaration
+31. Dockerfile + deployment config
+32. Performance testing (1000+ elements, 10+ users)
+33. Security hardening: rate limiting on auth endpoints
+
+---
+
+## Open Decisions
+
+> [!IMPORTANT]
+> **Comment Threads (Bonus B2)**: This feature is NOT included in the current plan. It can be added as a stretch goal after Phase 4 if time permits. Requires: a `comments` MongoDB collection, a comment UI component anchored to elements, and WebSocket message types for comment CRUD.
+
+> [!NOTE]
+> **Hosting Provider**: The plan assumes Railway / Render / Fly.io (free tier). Confirm preferred provider before deployment phase.

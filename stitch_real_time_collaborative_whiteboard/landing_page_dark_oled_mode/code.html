@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CanvasFlow - High-Performance Whiteboarding</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;family=Sora:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary-fixed-variant": "#2f2ebe",
+                    "surface-container": "#201f1f",
+                    "surface-tint": "#c0c1ff",
+                    "on-primary-fixed": "#07006c",
+                    "surface-container-lowest": "#0e0e0e",
+                    "outline-variant": "#464554",
+                    "error-container": "#93000a",
+                    "primary-container": "#8083ff",
+                    "primary-fixed-dim": "#c0c1ff",
+                    "on-secondary-container": "#00424e",
+                    "on-tertiary-fixed": "#40000d",
+                    "on-secondary": "#003640",
+                    "surface": "#131313",
+                    "outline": "#908fa0",
+                    "on-surface": "#e5e2e1",
+                    "surface-bright": "#393939",
+                    "on-secondary-fixed-variant": "#004e5c",
+                    "on-background": "#e5e2e1",
+                    "on-error-container": "#ffdad6",
+                    "surface-dim": "#131313",
+                    "surface-container-highest": "#353534",
+                    "secondary-fixed": "#acedff",
+                    "on-tertiary": "#67001b",
+                    "tertiary-fixed": "#ffdadb",
+                    "on-error": "#690005",
+                    "on-surface-variant": "#c7c4d7",
+                    "secondary-fixed-dim": "#4cd7f6",
+                    "secondary-container": "#03b5d3",
+                    "on-primary": "#1000a9",
+                    "secondary": "#4cd7f6",
+                    "inverse-primary": "#494bd6",
+                    "inverse-on-surface": "#313030",
+                    "background": "#131313",
+                    "error": "#ffb4ab",
+                    "surface-container-high": "#2a2a2a",
+                    "on-tertiary-fixed-variant": "#92002a",
+                    "inverse-surface": "#e5e2e1",
+                    "tertiary": "#ffb2b7",
+                    "on-primary-container": "#0d0096",
+                    "primary-fixed": "#e1e0ff",
+                    "tertiary-fixed-dim": "#ffb2b7",
+                    "primary": "#c0c1ff",
+                    "on-tertiary-container": "#5b0017",
+                    "surface-variant": "#353534",
+                    "tertiary-container": "#ff516a",
+                    "surface-container-low": "#1c1b1b",
+                    "on-secondary-fixed": "#001f26"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "lg": "1.5rem",
+                    "xs": "0.25rem",
+                    "base": "8px",
+                    "xl": "2.5rem",
+                    "gutter": "1.5rem",
+                    "margin-mobile": "1rem",
+                    "md": "1rem",
+                    "sm": "0.5rem",
+                    "margin-desktop": "2.5rem"
+            },
+            "fontFamily": {
+                    "headline-lg-mobile": ["Sora"],
+                    "label-md": ["JetBrains Mono"],
+                    "headline-xl": ["Sora"],
+                    "body-sm": ["Inter"],
+                    "headline-lg": ["Sora"],
+                    "body-md": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "headline-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        .glow-primary { box-shadow: 0 0 40px rgba(192, 193, 255, 0.15); }
+        .text-glow { text-shadow: 0 0 20px rgba(192, 193, 255, 0.3); }
+        
+        /* Floating animations for the living whiteboard */
+        @keyframes float-slow {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-10px) rotate(1deg); }
+        }
+        @keyframes float-fast {
+            0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+            50% { transform: translateY(-15px) rotate(-2deg) scale(1.02); }
+        }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+        .anim-float-slow { animation: float-slow 8s ease-in-out infinite; }
+        .anim-float-fast { animation: float-fast 5s ease-in-out infinite; }
+        .anim-pulse-glow { animation: pulse-glow 4s ease-in-out infinite; }
+        
+        .grid-pattern {
+            background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md text-body-md min-h-screen overflow-x-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar (CanvasFlow) -->
+<nav class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-desktop py-md bg-surface/80 dark:bg-surface/80 backdrop-blur-md shadow-sm dark:shadow-none transition-all duration-300 border-b border-transparent dark:border-white/5" id="global-nav">
+<div class="flex items-center gap-xl">
+<!-- Brand -->
+<div class="text-headline-lg font-headline-lg font-black text-primary dark:text-primary-fixed tracking-tight cursor-pointer">
+                CanvasFlow
+            </div>
+<!-- Navigation Links (Inactive for Landing Page Context) -->
+<div class="hidden md:flex gap-md items-center">
+<a class="font-label-md text-label-md text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed transition-colors hover:bg-surface-variant/50 dark:hover:bg-surface-container-highest/30 rounded-lg px-3 py-1.5 uppercase" href="#">Dashboard</a>
+<a class="font-label-md text-label-md text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed transition-colors hover:bg-surface-variant/50 dark:hover:bg-surface-container-highest/30 rounded-lg px-3 py-1.5 uppercase" href="#">Templates</a>
+<a class="font-label-md text-label-md text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed transition-colors hover:bg-surface-variant/50 dark:hover:bg-surface-container-highest/30 rounded-lg px-3 py-1.5 uppercase" href="#">Settings</a>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<!-- Trailing Icon Actions -->
+<button class="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-full hover:bg-surface-variant/50">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-full hover:bg-surface-variant/50">
+<span class="material-symbols-outlined">help</span>
+</button>
+<!-- Trailing Primary Action -->
+<button class="bg-primary text-on-primary font-label-md text-label-md px-lg py-sm rounded-lg hover:bg-primary-fixed transition-all hover:scale-95 duration-100 uppercase tracking-widest shadow-[0_0_15px_rgba(192,193,255,0.2)] hover:shadow-[0_0_25px_rgba(192,193,255,0.4)] ml-sm">
+                New Board
+            </button>
+</div>
+</nav>
+<!-- Hero Section -->
+<section class="relative pt-[160px] pb-xl px-margin-mobile md:px-margin-desktop flex flex-col items-center text-center overflow-hidden">
+<!-- Ambient Background Glow -->
+<div class="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-primary/10 blur-[120px] rounded-full pointer-events-none z-0"></div>
+<div class="absolute top-1/3 right-1/4 w-[400px] h-[400px] bg-secondary/10 blur-[100px] rounded-full pointer-events-none z-0"></div>
+<div class="relative z-10 max-w-4xl mx-auto flex flex-col items-center">
+<div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container border border-white/5 mb-lg">
+<span class="w-2 h-2 rounded-full bg-secondary anim-pulse-glow"></span>
+<span class="font-label-md text-label-md text-secondary tracking-widest uppercase">CanvasFlow 2.0 is Live</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl md:text-[64px] md:leading-[72px] text-on-surface font-black tracking-tighter mb-md text-glow">
+                The Infinite Canvas for<br/>
+<span class="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">High-Performance</span> Teams.
+            </h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl mx-auto mb-xl text-lg">
+                Design, draw, and ideate at the speed of thought. An ultra-responsive workspace engineered for data density, deep focus, and seamless collaboration.
+            </p>
+<div class="flex flex-col sm:flex-row gap-md items-center w-full justify-center">
+<button class="w-full sm:w-auto bg-primary text-on-primary font-label-md text-label-md px-xl py-md rounded-lg hover:bg-primary-fixed transition-all hover:scale-105 duration-200 uppercase tracking-widest glow-primary">
+                    Start Free Trial
+                </button>
+<button class="w-full sm:w-auto bg-transparent border border-outline text-on-surface font-label-md text-label-md px-xl py-md rounded-lg hover:border-primary hover:text-primary transition-all duration-200 uppercase tracking-widest flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">play_circle</span>
+                    View Demo
+                </button>
+</div>
+</div>
+<!-- Living Whiteboard Preview -->
+<div class="relative w-full max-w-[1200px] h-[500px] md:h-[700px] mt-xl rounded-xl border border-white/10 bg-surface-container-low grid-pattern overflow-hidden shadow-2xl z-10 group" data-alt="A sleek, high-fidelity digital mockup of a modern collaborative whiteboard interface. The scene shows glowing neon geometric shapes, interconnected nodes, and vibrant sticky notes on an ultra-dark, pure OLED black background. Soft volumetric lighting highlights the primary indigo and cyan accents. The overall aesthetic is highly technical, professional, and visually striking, suggesting advanced software capabilities.">
+<!-- Internal UI Header -->
+<div class="absolute top-0 left-0 w-full h-12 bg-surface-container-high/80 backdrop-blur-md border-b border-white/5 flex items-center px-4 justify-between z-20">
+<div class="flex items-center gap-3">
+<div class="flex gap-1.5">
+<div class="w-3 h-3 rounded-full bg-error/80"></div>
+<div class="w-3 h-3 rounded-full bg-primary/80"></div>
+<div class="w-3 h-3 rounded-full bg-secondary/80"></div>
+</div>
+<span class="font-label-md text-label-md text-on-surface-variant ml-2">Project Alpha - Architecture</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-primary text-on-primary flex items-center justify-center font-label-md text-[10px]">JS</div>
+<div class="w-6 h-6 rounded-full bg-secondary text-on-secondary flex items-center justify-center font-label-md text-[10px] -ml-2 border border-surface-container-high">MK</div>
+</div>
+</div>
+<!-- Canvas Elements (Simulated) -->
+<div class="absolute inset-0 pt-12 p-8 relative">
+<!-- Connection Line (SVG) -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none" style="z-index: 1;">
+<path class="anim-pulse-glow" d="M 200 200 C 350 200, 300 400, 500 400" fill="none" stroke="#c0c1ff" stroke-dasharray="6 6" stroke-width="2"></path>
+<path class="opacity-50" d="M 550 400 L 700 300" fill="none" stroke="#4cd7f6" stroke-width="2"></path>
+</svg>
+<!-- Node 1 -->
+<div class="absolute top-[150px] left-[10%] w-[180px] p-4 rounded-lg bg-surface-container border border-primary/30 shadow-lg anim-float-slow" style="z-index: 2;">
+<div class="font-label-md text-label-md text-primary mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">database</span> Data Layer
+                    </div>
+<p class="font-body-sm text-body-sm text-on-surface-variant text-xs">High-throughput processing cluster configuration.</p>
+</div>
+<!-- Sticky Note -->
+<div class="absolute top-[280px] left-[30%] w-[160px] p-4 rounded bg-secondary-container/20 border border-secondary/50 shadow-md anim-float-fast rotate-[-2deg]" style="z-index: 3;">
+<p class="font-body-sm text-body-sm text-on-surface text-sm">Optimize caching strategy here before Q3 rollout.</p>
+</div>
+<!-- Node 2 (Active) -->
+<div class="absolute top-[350px] left-[45%] w-[220px] p-5 rounded-lg bg-surface-container-high border-2 border-primary glow-primary anim-float-slow" style="animation-delay: 1s; z-index: 2;">
+<div class="font-label-md text-label-md text-on-surface mb-2 flex justify-between items-center">
+<span class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-primary">api</span> Core API</span>
+<span class="w-2 h-2 rounded-full bg-secondary anim-pulse-glow"></span>
+</div>
+<div class="w-full h-2 bg-surface-container-lowest rounded-full mt-4 overflow-hidden">
+<div class="h-full bg-primary w-[70%]"></div>
+</div>
+</div>
+<!-- Image Card -->
+<div class="absolute top-[180px] left-[65%] w-[200px] h-[140px] rounded-lg bg-surface-container border border-white/5 shadow-xl overflow-hidden anim-float-fast" data-alt="A small UI component showing a detailed technical graph with a dark background. Vibrant cyan and magenta lines trace upward trends. The aesthetic is crisp, data-dense, and highly professional." style="animation-delay: 2s; z-index: 2;">
+<div class="w-full h-full bg-gradient-to-br from-surface-bright to-surface flex flex-col justify-end p-3 border-t border-white/10 mt-auto">
+<div class="h-1 w-1/2 bg-secondary/50 rounded mb-1"></div>
+<div class="h-1 w-3/4 bg-primary/50 rounded"></div>
+</div>
+</div>
+<!-- Cursor 1 -->
+<div class="absolute top-[250px] left-[25%] z-50 flex items-start anim-float-slow">
+<span class="material-symbols-outlined text-secondary drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" style="font-variation-settings: 'FILL' 1;">near_me</span>
+<div class="bg-secondary text-on-secondary font-label-md text-[10px] px-2 py-0.5 rounded-full ml-1 mt-3">Sarah</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Value Propositions (Bento Grid) -->
+<section class="py-xl px-margin-mobile md:px-margin-desktop max-w-[1400px] mx-auto z-10 relative">
+<div class="text-center mb-xl">
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface mb-sm">Engineered for Velocity</h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl mx-auto">Leave clunky whiteboards behind. CanvasFlow renders complex architectures instantly.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-md md:gap-lg">
+<!-- Bento Item 1 -->
+<div class="col-span-1 md:col-span-2 bg-surface-container-low border border-white/5 rounded-xl p-lg md:p-xl relative overflow-hidden group hover:border-primary/30 transition-colors duration-300">
+<div class="absolute top-0 right-0 w-64 h-64 bg-primary/10 blur-[60px] rounded-full group-hover:bg-primary/20 transition-colors z-0"></div>
+<div class="relative z-10 h-full flex flex-col">
+<div class="w-12 h-12 rounded-lg bg-surface-container flex items-center justify-center border border-white/10 mb-lg">
+<span class="material-symbols-outlined text-primary text-[24px]">bolt</span>
+</div>
+<h3 class="font-headline-lg text-headline-lg-mobile text-on-surface mb-sm">Hardware Accelerated</h3>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-md">Our proprietary WebGL rendering engine ensures 60fps performance even with 10,000+ objects on the canvas.</p>
+<!-- Mini visual -->
+<div class="mt-auto pt-lg flex items-end gap-2 h-24">
+<div class="w-4 bg-surface-bright rounded-t h-[30%]"></div>
+<div class="w-4 bg-surface-bright rounded-t h-[50%]"></div>
+<div class="w-4 bg-surface-bright rounded-t h-[40%]"></div>
+<div class="w-4 bg-primary rounded-t h-[90%] shadow-[0_0_15px_rgba(192,193,255,0.3)]"></div>
+<div class="w-4 bg-surface-bright rounded-t h-[60%]"></div>
+<div class="w-4 bg-surface-bright rounded-t h-[45%]"></div>
+</div>
+</div>
+</div>
+<!-- Bento Item 2 -->
+<div class="col-span-1 bg-surface-container-low border border-white/5 rounded-xl p-lg relative overflow-hidden group hover:border-secondary/30 transition-colors duration-300">
+<div class="relative z-10 h-full flex flex-col">
+<div class="w-12 h-12 rounded-lg bg-surface-container flex items-center justify-center border border-white/10 mb-lg">
+<span class="material-symbols-outlined text-secondary text-[24px]">group</span>
+</div>
+<h3 class="font-headline-lg text-headline-lg-mobile text-on-surface mb-sm">Multiplayer Native</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Real-time presence, cursor tracking, and instant conflict resolution powered by CRDTs.</p>
+<div class="mt-auto pt-lg flex -space-x-3">
+<div class="w-10 h-10 rounded-full bg-surface-bright border-2 border-surface-container-low flex items-center justify-center text-xs font-label-md text-on-surface">JD</div>
+<div class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container border-2 border-surface-container-low flex items-center justify-center text-xs font-label-md">AL</div>
+<div class="w-10 h-10 rounded-full bg-secondary-container text-on-secondary-container border-2 border-surface-container-low flex items-center justify-center text-xs font-label-md">MR</div>
+</div>
+</div>
+</div>
+<!-- Bento Item 3 -->
+<div class="col-span-1 md:col-span-3 bg-surface-container-low border border-white/5 rounded-xl p-0 relative overflow-hidden group">
+<div class="flex flex-col md:flex-row h-full">
+<div class="p-lg md:p-xl flex-1 flex flex-col justify-center">
+<div class="w-12 h-12 rounded-lg bg-surface-container flex items-center justify-center border border-white/10 mb-lg">
+<span class="material-symbols-outlined text-primary text-[24px]">all_out</span>
+</div>
+<h3 class="font-headline-lg text-headline-lg-mobile text-on-surface mb-sm">Infinite Spatial Context</h3>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-lg mb-lg">Don't confine your architecture to standard pages. Zoom seamlessly from a 10,000-foot strategic overview down to individual API endpoint configurations without losing context.</p>
+<button class="w-fit font-label-md text-label-md text-primary hover:text-primary-fixed uppercase tracking-widest flex items-center gap-1 transition-colors">
+                            Explore Features <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+<div class="flex-1 min-h-[300px] bg-surface-container grid-pattern border-l border-white/5 relative" data-alt="A detailed map-like view of a complex software architecture diagram on a dark canvas. The nodes are small glowing dots connected by fine, precise lines, creating a web of data flow. The visual style is highly abstract, technical, and utilizes a deep black background with stark white, indigo, and cyan contrasting elements.">
+<!-- Simulated spatial view -->
+<div class="absolute inset-0 flex items-center justify-center opacity-50 group-hover:opacity-100 transition-opacity duration-500">
+<div class="w-32 h-32 border border-primary/30 rounded-full absolute anim-pulse-glow"></div>
+<div class="w-64 h-64 border border-secondary/20 rounded-full absolute" style="animation: pulse-glow 6s infinite;"></div>
+<span class="material-symbols-outlined text-[48px] text-surface-bright">zoom_out_map</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Footer Spacer -->
+<div class="h-32"></div>
+</body></html>
