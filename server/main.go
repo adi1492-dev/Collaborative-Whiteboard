@@ -101,6 +101,7 @@ func main() {
 		boardGroup.PUT("/:id", handlers.UpdateBoard)
 		boardGroup.DELETE("/:id", handlers.DeleteBoard)
 		boardGroup.POST("/:id/share", handlers.UpdateShareLink)
+		boardGroup.POST("/:id/sync", handlers.SyncBoardElements)
 		boardGroup.POST("/:id/ai/summarize", handlers.SummarizeBoard)
 	}
 

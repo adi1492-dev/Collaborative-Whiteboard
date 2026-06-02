@@ -235,3 +235,55 @@ func UpdateShareLink(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"shareLink": board.ShareLink, "sharePermission": board.SharePermission})
 }
+
+// SyncElementsRequest is the expected body for bulk syncing elements.
+type SyncElementsRequest struct {
+	Elements []map[string]interface{} `json:"elements"`
+}
+
+// SyncBoardElements handles POST /api/boards/:id/sync
+func SyncBoardElements(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+	ownerObjID, _ := primitive.ObjectIDFromHex(userID)
+
+	// Verify user is owner or collaborator (simple check for now, can be expanded)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var board models.Board
+	err := database.Boards().FindOne(ctx, bson.M{
+		"boardId": boardID,
+		"$or": []bson.M{
+			{"ownerId": ownerObjID},
+			{"collaborators.userId": ownerObjID},
+		},
+	}).Decode(&board)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Board not found or not authorized"})
+		return
+	}
+
+	var req SyncElementsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+		return
+	}
+
+	// For bulk write, we can use individual updates
+	for _, el := range req.Elements {
+		elementId, ok := el["id"].(string)
+		if !ok || elementId == "" {
+			continue
+		}
+		
+		el["boardId"] = boardID
+		el["elementId"] = elementId
+		
+		// Use SafeSaveElement for consistency and offline fallback
+		database.SafeSaveElement(el)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Synced", "count": len(req.Elements)})
+}
