@@ -34,6 +34,60 @@ export class ShapeElement extends Element {
         ctx.stroke();
         break;
 
+      case 'triangle':
+        ctx.moveTo(this.x + this.width / 2, this.y + hw);
+        ctx.lineTo(this.x + this.width - hw, this.y + this.height - hw);
+        ctx.lineTo(this.x + hw, this.y + this.height - hw);
+        ctx.closePath();
+        if (this.style.fillColor !== 'transparent') ctx.fill();
+        ctx.stroke();
+        break;
+
+      case 'diamond':
+        ctx.moveTo(this.x + this.width / 2, this.y + hw);
+        ctx.lineTo(this.x + this.width - hw, this.y + this.height / 2);
+        ctx.lineTo(this.x + this.width / 2, this.y + this.height - hw);
+        ctx.lineTo(this.x + hw, this.y + this.height / 2);
+        ctx.closePath();
+        if (this.style.fillColor !== 'transparent') ctx.fill();
+        ctx.stroke();
+        break;
+
+      case 'star':
+        const cx = this.x + this.width / 2;
+        const cy = this.y + this.height / 2;
+        const outerRadius = Math.max(1, (Math.min(this.width, this.height) - hw * 2) / 2);
+        const innerRadius = outerRadius / 2.5;
+        let rot = Math.PI / 2 * 3;
+        const step = Math.PI / 5;
+        ctx.moveTo(cx, cy - outerRadius);
+        for (let i = 0; i < 5; i++) {
+          ctx.lineTo(cx + Math.cos(rot) * outerRadius, cy + Math.sin(rot) * outerRadius);
+          rot += step;
+          ctx.lineTo(cx + Math.cos(rot) * innerRadius, cy + Math.sin(rot) * innerRadius);
+          rot += step;
+        }
+        ctx.closePath();
+        if (this.style.fillColor !== 'transparent') ctx.fill();
+        ctx.stroke();
+        break;
+
+      case 'polygon': // Hexagon
+        const px = this.x + this.width / 2;
+        const py = this.y + this.height / 2;
+        const pr = Math.max(1, (Math.min(this.width, this.height) - hw * 2) / 2);
+        let prot = Math.PI / 2 * 3;
+        const pstep = Math.PI / 3;
+        ctx.moveTo(px, py - pr);
+        for (let i = 0; i < 6; i++) {
+          ctx.lineTo(px + Math.cos(prot) * pr, py + Math.sin(prot) * pr);
+          prot += pstep;
+        }
+        ctx.closePath();
+        if (this.style.fillColor !== 'transparent') ctx.fill();
+        ctx.stroke();
+        break;
+
       case 'line':
       case 'arrow':
         // For lines, width/height act as a vector from x,y

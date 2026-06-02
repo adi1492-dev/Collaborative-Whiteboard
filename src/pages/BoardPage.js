@@ -7,6 +7,7 @@ import { ElementManager } from '../elements/ElementManager.js';
 import { InputHandler } from '../canvas/InputHandler.js';
 import { SyncManager } from '../sync/SyncManager.js';
 import { Toolbar } from '../ui/Toolbar.js';
+import { PropertyPanel } from '../ui/PropertyPanel.js';
 import { AIManager } from '../ai/AIManager.js';
 
 // Tools
@@ -151,6 +152,10 @@ export class BoardPage {
     this.ih.registerTool('pen', new PenTool());
     this.ih.registerTool('rectangle', new ShapeTool('rectangle'));
     this.ih.registerTool('ellipse', new ShapeTool('ellipse'));
+    this.ih.registerTool('triangle', new ShapeTool('triangle'));
+    this.ih.registerTool('diamond', new ShapeTool('diamond'));
+    this.ih.registerTool('star', new ShapeTool('star'));
+    this.ih.registerTool('polygon', new ShapeTool('polygon'));
     this.ih.registerTool('line', new ShapeTool('line'));
     this.ih.registerTool('arrow', new ShapeTool('arrow'));
     this.ih.registerTool('sticky', new StickyTool());
@@ -161,9 +166,39 @@ export class BoardPage {
 
     // 5. Initialize UI
     this.toolbar = new Toolbar(uiContainer, this.ih);
-
+    
     // 6. Initialize Sync Layer
     this.sync = new SyncManager(this.app, this.boardId, this.cm);
+
+    // 7. Initialize Property Panel
+    this.propertyPanel = new PropertyPanel(uiContainer, this.ih, this.em, this.sync);
+
+    // Dynamic Property Panel Visibility
+    const originalSetActive = this.ih.setActiveTool.bind(this.ih);
+    this.ih.setActiveTool = (toolId) => {
+      originalSetActive(toolId);
+      if (toolId === 'select' || toolId === 'pan' || toolId === 'eraser') {
+        if (toolId === 'select' && this.em.selectedIds.size > 0) {
+          this.propertyPanel.show();
+        } else {
+          this.propertyPanel.hide();
+        }
+      } else {
+        this.propertyPanel.show();
+      }
+    };
+
+    const originalSelect = this.em.select.bind(this.em);
+    this.em.select = (id, add) => {
+      originalSelect(id, add);
+      if (this.ih.activeTool && this.ih.activeTool.name === 'select') this.propertyPanel.show();
+    };
+
+    const originalClear = this.em.clearSelection.bind(this.em);
+    this.em.clearSelection = () => {
+      originalClear();
+      if (this.ih.activeTool && this.ih.activeTool.name === 'select') this.propertyPanel.hide();
+    };
     
     // Bind HA Status UI
     const statusDot = this.root.querySelector('#latency-indicator');
