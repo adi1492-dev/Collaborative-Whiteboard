@@ -78,6 +78,7 @@ export class SyncManager {
     const json = element.toJSON();
     this.ws.send('element_create', json);
     this.dirtyElements.set(element.id, json);
+    this._scheduleAutoSave();
   }
 
   broadcastUpdate(element) {
@@ -85,6 +86,7 @@ export class SyncManager {
     const json = element.toJSON();
     this.ws.send('element_update', json);
     this.dirtyElements.set(element.id, json);
+    this._scheduleAutoSave();
   }
 
   broadcastDelete(elementId) {
@@ -93,6 +95,18 @@ export class SyncManager {
       updatedAt: this._tickClock() 
     });
     this.dirtyElements.delete(elementId);
+    this._scheduleAutoSave();
+  }
+
+  _scheduleAutoSave() {
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+    }
+    this.autoSaveTimer = setTimeout(() => {
+      if (this.onSaveTriggered && this.dirtyElements.size > 0) {
+        this.onSaveTriggered();
+      }
+    }, 500); // 500ms debounce
   }
 
   // --- Bulk Save (HTTP) ---
@@ -202,6 +216,7 @@ export class SyncManager {
   }
 
   destroy() {
+    if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     if (this.dirtyElements.size > 0) {
       this.forceSave(); // Fire and forget with keepalive:true
     }

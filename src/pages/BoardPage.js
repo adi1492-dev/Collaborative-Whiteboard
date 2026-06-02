@@ -275,14 +275,8 @@ export class BoardPage {
     if (saveBtn) {
       saveBtn.addEventListener('click', () => triggerSave(true));
       
-      // Auto-trigger when leaving a tool (pointerup)
-      window.addEventListener('pointerup', () => {
-        setTimeout(() => {
-          if (this.sync && this.sync.dirtyElements.size > 0) {
-            triggerSave(false); // Auto-save only dirty elements
-          }
-        }, 100); // Tiny delay to let tools finish their work
-      });
+      // Auto-trigger using the robust data-layer debounce
+      this.sync.onSaveTriggered = () => triggerSave(false);
     }
 
     // Bind beforeunload
