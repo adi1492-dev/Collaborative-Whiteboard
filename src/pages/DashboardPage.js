@@ -8,6 +8,7 @@ export class DashboardPage {
     this.app = app;
     this.boards = [];
     this.searchQuery = '';
+    this.currentFilter = 'all';
     this.render();
     this.fetchBoards();
   }
@@ -23,20 +24,20 @@ export class DashboardPage {
             <a href="#/" class="headline-md" style="color: var(--primary); text-decoration: none; font-weight: 900;">CanvasFlow</a>
           </div>
 
-          <nav class="sidebar-nav">
-            <a href="#/dashboard" class="sidebar-link active">
+          <nav class="sidebar-nav" id="sidebar-filters">
+            <a href="#" data-filter="all" class="sidebar-link active">
               <span class="material-symbols-outlined">dashboard</span>
               All Boards
             </a>
-            <a href="#" class="sidebar-link">
+            <a href="#" data-filter="recent" class="sidebar-link">
               <span class="material-symbols-outlined">schedule</span>
               Recent
             </a>
-            <a href="#" class="sidebar-link">
+            <a href="#" data-filter="starred" class="sidebar-link">
               <span class="material-symbols-outlined">star</span>
               Starred
             </a>
-            <a href="#" class="sidebar-link">
+            <a href="#" data-filter="shared" class="sidebar-link">
               <span class="material-symbols-outlined">folder_shared</span>
               Shared with me
             </a>
@@ -152,11 +153,22 @@ export class DashboardPage {
 
   renderBoards() {
     const container = this.root.querySelector('#boards-container');
+    const user = this.app.auth.getUser();
     
+    // Apply sidebar filter
+    let filtered = this.boards;
+    if (this.currentFilter === 'recent') {
+      filtered = [...this.boards].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 6);
+    } else if (this.currentFilter === 'shared') {
+      filtered = this.boards.filter(b => b.ownerId !== user._id && b.ownerId !== user.id);
+    } else if (this.currentFilter === 'starred') {
+      filtered = []; // Placeholder until starred backend is implemented
+    }
+
     // Filter boards based on search
-    const filtered = this.searchQuery 
-      ? this.boards.filter(b => b.title.toLowerCase().includes(this.searchQuery.toLowerCase()))
-      : this.boards;
+    if (this.searchQuery) {
+      filtered = filtered.filter(b => b.title.toLowerCase().includes(this.searchQuery.toLowerCase()));
+    }
 
     if (this.boards.length === 0) {
       // Complete empty state
@@ -215,6 +227,18 @@ export class DashboardPage {
   }
 
   _bindEvents() {
+    // Sidebar filters
+    const filterLinks = this.root.querySelectorAll('#sidebar-filters .sidebar-link');
+    filterLinks.forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        filterLinks.forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+        this.currentFilter = link.dataset.filter || 'all';
+        this.renderBoards();
+      });
+    });
+
     // Search
     const searchInput = this.root.querySelector('#search-input');
     searchInput?.addEventListener('input', (e) => {
