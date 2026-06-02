@@ -125,14 +125,14 @@ func GetBoard(c *gin.Context) {
 	}
 	defer cursor.Close(ctx)
 
-	var elements []models.Element
+	var elements []bson.M
 	if err := cursor.All(ctx, &elements); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse elements"})
 		return
 	}
 
 	if elements == nil {
-		elements = []models.Element{}
+		elements = []bson.M{}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"board": board, "elements": elements})
