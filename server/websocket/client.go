@@ -183,6 +183,10 @@ func (c *Client) handleMessage(msg Message) {
 		// Save to HA Dual-Database
 		var element map[string]interface{}
 		if err := json.Unmarshal(msg.Payload, &element); err == nil {
+			element["boardId"] = c.BoardID
+			if id, ok := element["id"]; ok {
+				element["elementId"] = id
+			}
 			database.SafeSaveElement(element)
 		}
 		
