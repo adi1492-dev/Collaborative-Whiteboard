@@ -7,6 +7,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Sora:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
+/* Page Styles */
+@import url('./landing.css');
+@import url('./auth.css');
+
 /* ── Dark Theme (default) ── */
 :root, [data-theme="dark"] {
   /* Surfaces */
@@ -485,7 +489,3 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
-
-/* ── Page Styles ── */
-@import url('./landing.css');
-@import url('./auth.css');
