@@ -287,3 +287,63 @@ func SyncBoardElements(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Synced", "count": len(req.Elements)})
 }
+
+// JoinBoard handles POST /api/boards/:id/join
+func JoinBoard(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+	userObjID, _ := primitive.ObjectIDFromHex(userID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Check if board exists
+	var board models.Board
+	err := database.Boards().FindOne(ctx, bson.M{"boardId": boardID}).Decode(&board)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Board not found"})
+		return
+	}
+
+	// Check if user is the owner
+	if board.OwnerID == userObjID {
+		c.JSON(http.StatusOK, gin.H{"message": "You are the owner", "boardId": board.BoardID})
+		return
+	}
+
+	// Check if user is already a collaborator
+	alreadyJoined := false
+	for _, col := range board.Collaborators {
+		if col.UserID == userObjID {
+			alreadyJoined = true
+			break
+		}
+	}
+
+	if alreadyJoined {
+		c.JSON(http.StatusOK, gin.H{"message": "Already joined", "boardId": board.BoardID})
+		return
+	}
+
+	// Add to collaborators with edit permission by default
+	newCollaborator := models.Collaborator{
+		UserID:     userObjID,
+		Permission: "edit",
+	}
+
+	_, err = database.Boards().UpdateOne(
+		ctx,
+		bson.M{"boardId": boardID},
+		bson.M{
+			"$push": bson.M{"collaborators": newCollaborator},
+			"$set":  bson.M{"updatedAt": time.Now()},
+		},
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to join room"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Successfully joined room", "boardId": board.BoardID})
+}

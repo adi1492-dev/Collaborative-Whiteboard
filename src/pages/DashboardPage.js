@@ -68,9 +68,13 @@ export class DashboardPage {
                 <input type="text" id="search-input" class="input" placeholder="Search boards..." />
               </div>
               
+              <button class="btn btn-outline" id="join-room-btn" style="margin-right: 8px;">
+                <span class="material-symbols-outlined" style="font-size:18px;">login</span>
+                Join Room
+              </button>
               <button class="btn btn-primary" id="create-board-btn">
                 <span class="material-symbols-outlined" style="font-size:18px;">add</span>
-                New Board
+                Create Room
               </button>
             </div>
           </header>
@@ -123,7 +127,32 @@ export class DashboardPage {
 
               <div class="modal-actions">
                 <button type="button" class="btn btn-ghost" id="cancel-modal-btn">Cancel</button>
-                <button type="submit" class="btn btn-primary" id="submit-board-btn">Create Board</button>
+                <button type="submit" class="btn btn-primary" id="submit-board-btn">Create Room</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Join Room Modal -->
+        <div class="modal-overlay" id="join-modal" style="display: none;">
+          <div class="modal-content glass elevation-3 anim-slide-up">
+            <div class="modal-header">
+              <h2 class="headline-md">Join a Room</h2>
+              <button class="modal-close" id="close-join-modal-btn">
+                <span class="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            
+            <form id="join-room-form">
+              <div class="form-group">
+                <label for="room-key" class="form-label">Room Key or Link</label>
+                <input type="text" id="room-key" class="input" placeholder="Paste the room key or full URL here..." required autofocus />
+                <p class="label-sm" style="color: var(--on-surface-variant); margin-top: 8px;">Example: http://localhost:5173/#/board/xxxx or just the key 'xxxx'</p>
+              </div>
+
+              <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" id="cancel-join-modal-btn">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="submit-join-btn">Join Room</button>
               </div>
             </form>
           </div>
@@ -183,7 +212,7 @@ export class DashboardPage {
           </p>
           <button class="btn btn-primary glow-primary" onclick="document.getElementById('create-board-btn').click()">
             <span class="material-symbols-outlined" style="font-size:18px;">add</span>
-            Create New Board
+            Create Room
           </button>
         </div>
       `;
@@ -302,6 +331,73 @@ export class DashboardPage {
         }
       } catch (err) {
         alert('Network error');
+      } finally {
+        submitBtn.classList.remove('btn-loading');
+        submitBtn.disabled = false;
+      }
+    });
+
+    // Join Modal logic
+    const joinModal = this.root.querySelector('#join-modal');
+    
+    this.root.querySelector('#join-room-btn')?.addEventListener('click', () => {
+      if (joinModal) {
+        joinModal.style.display = 'flex';
+        setTimeout(() => this.root.querySelector('#room-key')?.focus(), 50);
+      }
+    });
+
+    const closeJoinModal = () => {
+      if (joinModal) {
+        joinModal.style.display = 'none';
+        this.root.querySelector('#join-room-form')?.reset();
+      }
+    };
+
+    this.root.querySelector('#close-join-modal-btn')?.addEventListener('click', closeJoinModal);
+    this.root.querySelector('#cancel-join-modal-btn')?.addEventListener('click', closeJoinModal);
+    
+    joinModal?.addEventListener('click', (e) => {
+      if (e.target === joinModal) closeJoinModal();
+    });
+
+    // Form submit for joining room
+    this.root.querySelector('#join-room-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      let keyOrUrl = this.root.querySelector('#room-key').value.trim();
+      if (!keyOrUrl) return;
+
+      // Extract the board ID if it's a URL
+      let boardId = keyOrUrl;
+      try {
+        if (keyOrUrl.includes('http') || keyOrUrl.includes('localhost')) {
+          const urlParts = keyOrUrl.split('/board/');
+          if (urlParts.length > 1) {
+            boardId = urlParts[1].split(/[?#]/)[0]; // Remove query params or hashes just in case
+          }
+        }
+      } catch (err) {}
+
+      const submitBtn = this.root.querySelector('#submit-join-btn');
+      submitBtn.classList.add('btn-loading');
+      submitBtn.disabled = true;
+
+      try {
+        const res = await this.app.auth.apiFetch(`/api/boards/${boardId}/join`, {
+          method: 'POST',
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          closeJoinModal();
+          // Navigate to the joined room
+          this.app.navigate(`/board/${data.boardId}`);
+        } else {
+          alert('Failed to join room. Please check if the room key is correct.');
+        }
+      } catch (err) {
+        alert('Network error while trying to join the room.');
       } finally {
         submitBtn.classList.remove('btn-loading');
         submitBtn.disabled = false;
