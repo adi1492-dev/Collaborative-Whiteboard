@@ -75,6 +75,7 @@ func main() {
 		boardGroup.PUT("/:id", handlers.UpdateBoard)
 		boardGroup.DELETE("/:id", handlers.DeleteBoard)
 		boardGroup.POST("/:id/share", handlers.UpdateShareLink)
+		boardGroup.POST("/:id/ai/summarize", handlers.SummarizeBoard)
 	}
 
 	// Upload route (JWT protected)
