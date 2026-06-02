@@ -228,26 +228,44 @@ export class BoardPage {
       this.cm.transform.panTo(rect.width/2 - firstEl.x, rect.height/2 - firstEl.y);
     }
 
-    // Bind Manual Save button
+    // Bind Manual Save button and Tool-exit Auto-Save
     const saveBtn = this.root.querySelector('#manual-save-btn');
     const saveBtnText = this.root.querySelector('#save-btn-text');
-    if (saveBtn) {
-      saveBtn.addEventListener('click', async () => {
-        saveBtn.disabled = true;
-        saveBtnText.textContent = 'Saving...';
-        
-        // Force a full save of all elements on manual save
+    
+    const triggerSave = async (isManual = false) => {
+      if (!saveBtn || saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      saveBtnText.textContent = 'Saving...';
+      
+      if (isManual) {
+        // Force a full save of all elements on manual click
         for (const el of this.em.elements.values()) {
           this.sync.dirtyElements.set(el.id, el.toJSON());
         }
-        
-        const success = await this.sync.forceSave();
-        
-        saveBtnText.textContent = success ? 'Saved!' : 'Failed';
-        setTimeout(() => {
+      }
+      
+      const success = await this.sync.forceSave();
+      
+      saveBtnText.textContent = success ? 'Saved!' : 'Failed';
+      setTimeout(() => {
+        if (saveBtn) {
           saveBtn.disabled = false;
           saveBtnText.textContent = 'Save';
-        }, 2000);
+        }
+      }, 2000);
+    };
+
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => triggerSave(true));
+      
+      // Auto-trigger when leaving a tool (pointerup)
+      // This gives exactly the behavior you asked for: leaving the tool clicks save
+      this.cm.container.addEventListener('pointerup', () => {
+        setTimeout(() => {
+          if (this.sync && this.sync.dirtyElements.size > 0 && !saveBtn.disabled) {
+            triggerSave(false); // Auto-save only dirty elements
+          }
+        }, 100); // Tiny delay to let tools finish their work
       });
     }
 

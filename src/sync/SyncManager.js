@@ -25,7 +25,6 @@ export class SyncManager {
 
     // Auto-Save Queue
     this.dirtyElements = new Map();
-    this.autoSaveInterval = setInterval(() => this._processAutoSave(), 1000);
 
     // Setup WebSocket
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -133,12 +132,6 @@ export class SyncManager {
     }
   }
 
-  _processAutoSave() {
-    if (this.dirtyElements.size > 0) {
-      this.forceSave();
-    }
-  }
-
   // --- Incoming (Remote -> Local) ---
 
   _onRemoteCreate(msg) {
@@ -209,7 +202,6 @@ export class SyncManager {
   }
 
   destroy() {
-    clearInterval(this.autoSaveInterval);
     if (this.dirtyElements.size > 0) {
       this.forceSave(); // Fire and forget with keepalive:true
     }
