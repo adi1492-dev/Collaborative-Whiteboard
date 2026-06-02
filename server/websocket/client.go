@@ -269,7 +269,6 @@ func (c *Client) handleRTCSignaling(msg Message) {
 			case client.Send <- data:
 			default:
 			}
-			break
 		}
 	}
 }

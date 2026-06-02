@@ -197,6 +197,7 @@ export class WebRTCManager {
         this.sync._onRemoteDelete(msg);
         break;
       case 'cursor_move':
+        msg.userName = msg.payload.userName;
         this.sync.presenceSync._onRemoteCursor(msg);
         break;
     }

@@ -97,7 +97,8 @@ func main() {
 	{
 		boardGroup.POST("", handlers.CreateBoard)
 		boardGroup.GET("", handlers.ListBoards)
-		boardGroup.POST("/join", handlers.JoinBoard)
+		// Register under correct path /api/rooms/join
+		router.POST("/api/rooms/join", auth.JWTMiddleware(), handlers.JoinBoard)
 		boardGroup.GET("/:id", handlers.GetBoard)
 		boardGroup.PUT("/:id", handlers.UpdateBoard)
 		boardGroup.DELETE("/:id", handlers.DeleteBoard)

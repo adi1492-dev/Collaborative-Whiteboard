@@ -25,7 +25,9 @@ export class PresenceSync {
     const now = Date.now();
     if (now - this.lastSendTime > this.sendThrottle) {
       if (this.p2p) {
-        this.p2p.broadcast('cursor_move', { x: worldX, y: worldY });
+        const user = this.cm.syncManager?.app.auth.getUser();
+        const userName = user ? user.displayName : 'Collaborator';
+        this.p2p.broadcast('cursor_move', { x: worldX, y: worldY, userName });
       } else {
         this.ws.send('cursor_move', { x: worldX, y: worldY });
       }

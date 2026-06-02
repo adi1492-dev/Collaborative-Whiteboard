@@ -189,7 +189,17 @@ export class DashboardPage {
     if (this.currentFilter === 'recent') {
       filtered = [...this.boards].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 6);
     } else if (this.currentFilter === 'shared') {
-      filtered = this.boards.filter(b => b.ownerId !== user._id && b.ownerId !== user.id);
+      const getUserIdStr = (rawId) => {
+        if (!rawId) return '';
+        if (typeof rawId === 'string') return rawId;
+        if (typeof rawId === 'object') {
+          if (rawId.$oid) return rawId.$oid;
+          return rawId.toString();
+        }
+        return String(rawId);
+      };
+      const userIdStr = getUserIdStr(user._id || user.id);
+      filtered = this.boards.filter(b => getUserIdStr(b.ownerId) !== userIdStr);
     } else if (this.currentFilter === 'starred') {
       filtered = []; // Placeholder until starred backend is implemented
     }

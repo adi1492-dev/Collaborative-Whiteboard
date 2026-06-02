@@ -57,6 +57,17 @@ func (h *Hub) addClient(client *Client) {
 		log.Printf("🏠 Room created: %s", client.BoardID)
 	}
 
+	// Close and remove any existing connections for this user in the room to avoid stale/ghost connections
+	room.mu.Lock()
+	for existingClient := range room.clients {
+		if existingClient.UserID == client.UserID {
+			log.Printf("🔄 Closing stale connection for user %s", client.UserName)
+			delete(room.clients, existingClient)
+			existingClient.conn.Close()
+		}
+	}
+	room.mu.Unlock()
+
 	room.AddClient(client)
 	client.Room = room
 	log.Printf("👤 User %s joined room %s (%d users)", client.UserName, client.BoardID, room.ClientCount())

@@ -27,6 +27,15 @@ func (r *Room) AddClient(client *Client) {
 	
 	if len(r.clients) == 0 {
 		client.IsHost = true
+		// Notify the client that they are the host
+		msg := Message{
+			Type: "host_assigned",
+		}
+		data, _ := json.Marshal(msg)
+		select {
+		case client.Send <- data:
+		default:
+		}
 	} else {
 		client.IsHost = false
 	}
@@ -37,6 +46,11 @@ func (r *Room) AddClient(client *Client) {
 // RemoveClient removes a client from this room.
 func (r *Room) RemoveClient(client *Client) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
+	
+	if _, exists := r.clients[client]; !exists {
+		return
+	}
 	
 	delete(r.clients, client)
 	close(client.Send)
@@ -59,7 +73,6 @@ func (r *Room) RemoveClient(client *Client) {
 			break
 		}
 	}
-	r.mu.Unlock()
 }
 
 // ClientCount returns the number of connected clients.

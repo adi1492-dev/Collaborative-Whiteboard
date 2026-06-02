@@ -305,10 +305,30 @@ export class BoardPage {
 
   async _initRoomKey() {
     const user = this.app.auth.getUser();
-    // Check if current user is the owner (handling both _id and id depending on auth structure)
-    const userId = user._id || user.id;
+    if (!user) {
+      console.warn("No user found in auth, cannot initialize room key.");
+      return;
+    }
     
-    if (this.boardData.ownerId === userId) {
+    const userId = user._id || user.id;
+    console.log("Initializing Room Key. Board ownerId:", this.boardData.ownerId, "User ID:", userId);
+
+    const getUserIdStr = (rawId) => {
+      if (!rawId) return '';
+      if (typeof rawId === 'string') return rawId;
+      if (typeof rawId === 'object') {
+        if (rawId.$oid) return rawId.$oid;
+        return rawId.toString();
+      }
+      return String(rawId);
+    };
+
+    const ownerIdStr = getUserIdStr(this.boardData.ownerId);
+    const userIdStr = getUserIdStr(userId);
+
+    console.log("Normalized ownerId:", ownerIdStr, "Normalized userId:", userIdStr);
+    
+    if (ownerIdStr && userIdStr && ownerIdStr === userIdStr) {
       const display = this.root.querySelector('#room-key-display');
       const text = this.root.querySelector('#room-key-text');
       const timerLabel = this.root.querySelector('#room-key-timer');
@@ -322,8 +342,11 @@ export class BoardPage {
           const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/key/refresh`, { method: 'POST' });
           if (res.ok) {
             const data = await res.json();
+            console.log("Room key refreshed successfully:", data.roomKey);
             if (text) text.textContent = data.roomKey;
             secondsLeft = 60;
+          } else {
+            console.error("Failed to refresh room key, status:", res.status);
           }
         } catch (err) {
           console.error("Failed to refresh room key", err);
@@ -334,6 +357,7 @@ export class BoardPage {
       await refreshKey();
       
       // Update timer every second
+      if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
       this.keyTimerInterval = setInterval(() => {
         if (secondsLeft > 0) {
           secondsLeft--;
@@ -342,7 +366,10 @@ export class BoardPage {
       }, 1000);
       
       // Fetch new key every 60 seconds
+      if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
       this.keyRefreshInterval = setInterval(refreshKey, 60000);
+    } else {
+      console.log("Current user is not the owner of this board. Room key display remains hidden.");
     }
   }
 

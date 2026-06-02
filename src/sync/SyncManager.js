@@ -19,7 +19,8 @@ export class SyncManager {
     this.boardId = boardId;
     this.cm = canvasManager;
     this.em = canvasManager.elementManager;
-    this.userId = app.auth.getUser().id;
+    const user = app.auth.getUser();
+    this.userId = user ? (user.id || user._id) : null;
 
     // Lamport logical clock for LWW
     this.localClock = Date.now(); 
@@ -65,6 +66,9 @@ export class SyncManager {
     });
 
     this.ws.on('disconnected', () => {
+      this.isHost = false;
+      this._updateHostUI();
+      
       const indicator = document.getElementById('latency-indicator');
       if (indicator) {
         indicator.className = 'status-dot status-red';
