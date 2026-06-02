@@ -1,5 +1,6 @@
 /**
- * PropertyPanel — Context menu for changing colors, stroke width, etc.
+ * PropertyPanel — Advanced context panel for element style editing.
+ * Stroke color, fill color, stroke width, opacity, font size, text alignment.
  */
 export class PropertyPanel {
   constructor(root, inputHandler, elementManager, syncManager) {
@@ -7,140 +8,298 @@ export class PropertyPanel {
     this.ih = inputHandler;
     this.em = elementManager;
     this.sync = syncManager;
-    
+
     this.container = document.createElement('div');
     this.container.className = 'property-panel glass elevation-3 anim-slide-up';
-    this.container.style.position = 'absolute';
-    this.container.style.bottom = '96px';
-    this.container.style.left = '50%';
-    this.container.style.transform = 'translateX(-50%)';
-    this.container.style.display = 'none';
-    this.container.style.padding = '8px 16px';
-    this.container.style.borderRadius = 'var(--radius-xl)';
-    this.container.style.gap = '16px';
-    this.container.style.alignItems = 'center';
-    this.container.style.pointerEvents = 'auto';
-    
-    // Preset colors from DESIGN.md
-    this.colors = [
-      '#e5e2e1', // White/text
-      '#908fa0', // Gray
-      '#c0c1ff', // Primary Indigo
-      '#4cd7f6', // Secondary Cyan
-      '#ffb2b7', // Tertiary Rose
-      '#ffb4ab', // Error Red
-      'transparent'
+    this.container.style.cssText = `
+      position:absolute; bottom:88px; left:50%; transform:translateX(-50%);
+      display:none; padding:10px 16px; border-radius:16px;
+      gap:14px; align-items:center; pointer-events:auto; flex-wrap:wrap;
+      max-width:calc(100vw - 200px);
+    `;
+
+    this.strokeColors = [
+      '#e5e2e1', '#908fa0', '#c0c1ff', '#4cd7f6', '#ffb2b7',
+      '#ffd166', '#06d6a0', '#ef476f', '#131313', 'transparent'
     ];
-    
+
+    this.fillColors = [
+      'transparent', '#c0c1ff', '#4cd7f6', '#ffb2b7', '#ffd166',
+      '#06d6a0', '#a8dadc', '#ffc8dd', '#e9c46a', '#264653'
+    ];
+
     this.render();
     this.root.appendChild(this.container);
-    
     this._bindEvents();
   }
 
   render() {
-    let html = `
-      <div style="display:flex; flex-direction:column; gap:6px;">
-        <span class="label-sm" style="color:var(--on-surface-variant)">Color</span>
-        <div style="display:flex; gap:6px;" id="color-swatches">
-    `;
-    
-    for (const c of this.colors) {
-      const isTransparent = c === 'transparent';
-      const style = isTransparent 
-        ? `background: rgba(255,255,255,0.05); border: 1px dashed var(--outline-variant); position:relative;` 
-        : `background: ${c}; border: 1px solid rgba(255,255,255,0.1);`;
-        
-      html += `
-        <button class="color-btn" data-color="${c}" style="width:24px; height:24px; border-radius:50%; cursor:pointer; ${style}">
-           ${isTransparent ? '<div style="position:absolute; top:11px; left:2px; right:2px; height:1px; background:var(--error); transform:rotate(45deg);"></div>' : ''}
-        </button>
-      `;
-    }
-    
-    html += `
+    this.container.innerHTML = `
+      <!-- Stroke Color -->
+      <div class="pp-group">
+        <span class="pp-label">Stroke</span>
+        <div class="pp-swatches" id="stroke-swatches">
+          ${this.strokeColors.map(c => this._swatchHTML(c, 'stroke')).join('')}
+          <label class="pp-swatch pp-custom-color" title="Custom color">
+            <input type="color" id="custom-stroke-color" style="opacity:0;width:0;height:0;position:absolute;">
+            <span class="material-symbols-outlined" style="font-size:14px">colorize</span>
+          </label>
         </div>
       </div>
-      <div class="toolbar-divider" style="height: 32px;"></div>
-      <div style="display:flex; flex-direction:column; gap:6px;">
-        <span class="label-sm" style="color:var(--on-surface-variant)">Stroke Thickness</span>
-        <input type="range" id="stroke-width" min="1" max="20" value="3" style="width: 100px; accent-color: var(--primary);">
+
+      <div class="pp-divider"></div>
+
+      <!-- Fill Color -->
+      <div class="pp-group">
+        <span class="pp-label">Fill</span>
+        <div class="pp-swatches" id="fill-swatches">
+          ${this.fillColors.map(c => this._swatchHTML(c, 'fill')).join('')}
+          <label class="pp-swatch pp-custom-color" title="Custom fill">
+            <input type="color" id="custom-fill-color" style="opacity:0;width:0;height:0;position:absolute;">
+            <span class="material-symbols-outlined" style="font-size:14px">colorize</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="pp-divider"></div>
+
+      <!-- Stroke Width -->
+      <div class="pp-group">
+        <span class="pp-label">Width</span>
+        <input type="range" id="stroke-width" min="1" max="24" value="2"
+          style="width:80px;accent-color:var(--primary);">
+        <span id="stroke-width-val" class="pp-val">2</span>
+      </div>
+
+      <div class="pp-divider"></div>
+
+      <!-- Opacity -->
+      <div class="pp-group">
+        <span class="pp-label">Opacity</span>
+        <input type="range" id="opacity-slider" min="10" max="100" value="100"
+          style="width:70px;accent-color:var(--primary);">
+        <span id="opacity-val" class="pp-val">100%</span>
+      </div>
+
+      <div class="pp-divider" id="font-divider" style="display:none"></div>
+
+      <!-- Font Size (text/sticky only) -->
+      <div class="pp-group" id="font-group" style="display:none">
+        <span class="pp-label">Size</span>
+        <input type="number" id="font-size" min="8" max="96" value="14"
+          style="width:52px;background:var(--surface-container);border:1px solid var(--outline-variant);border-radius:6px;padding:3px 6px;color:var(--on-surface);font-size:12px;text-align:center;">
+        <div style="display:flex;gap:2px;margin-left:4px;">
+          <button class="pp-align-btn" data-align="left" title="Left">
+            <span class="material-symbols-outlined" style="font-size:14px">format_align_left</span>
+          </button>
+          <button class="pp-align-btn" data-align="center" title="Center">
+            <span class="material-symbols-outlined" style="font-size:14px">format_align_center</span>
+          </button>
+          <button class="pp-align-btn" data-align="right" title="Right">
+            <span class="material-symbols-outlined" style="font-size:14px">format_align_right</span>
+          </button>
+        </div>
       </div>
     `;
-    
-    this.container.innerHTML = html;
+
+    this._injectPPStyles();
   }
-  
+
+  _swatchHTML(c, type) {
+    const isTransp = c === 'transparent';
+    const bg = isTransp ? 'rgba(255,255,255,0.04)' : c;
+    const border = isTransp ? '1px dashed var(--outline-variant)' : '1px solid rgba(255,255,255,0.12)';
+    return `<button class="pp-swatch" data-color="${c}" data-type="${type}"
+      style="background:${bg};border:${border};${isTransp ? 'position:relative;overflow:hidden;' : ''}"
+      title="${isTransp ? 'None/Transparent' : c}">
+      ${isTransp ? '<div style="position:absolute;top:11px;left:0;right:0;height:1px;background:var(--error);transform:rotate(-30deg);"></div>' : ''}
+    </button>`;
+  }
+
   _bindEvents() {
-    const colorBtns = this.container.querySelectorAll('.color-btn');
-    colorBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const c = btn.dataset.color;
-        this._updateColor(c);
-      });
+    // Swatch clicks (stroke + fill)
+    this.container.addEventListener('click', (e) => {
+      const btn = e.target.closest('.pp-swatch[data-color]');
+      if (!btn) return;
+      this._applyColor(btn.dataset.color, btn.dataset.type);
     });
-    
-    const strokeSlider = this.container.querySelector('#stroke-width');
-    strokeSlider.addEventListener('input', (e) => {
-      this._updateStroke(parseInt(e.target.value));
+
+    // Custom color pickers
+    this.container.querySelector('#custom-stroke-color')?.addEventListener('input', (e) => {
+      this._applyColor(e.target.value, 'stroke');
+    });
+    this.container.querySelector('#custom-fill-color')?.addEventListener('input', (e) => {
+      this._applyColor(e.target.value, 'fill');
+    });
+
+    // Stroke width
+    const sw = this.container.querySelector('#stroke-width');
+    const swVal = this.container.querySelector('#stroke-width-val');
+    sw?.addEventListener('input', (e) => {
+      swVal.textContent = e.target.value;
+      this._applyStrokeWidth(parseInt(e.target.value));
+    });
+
+    // Opacity
+    const op = this.container.querySelector('#opacity-slider');
+    const opVal = this.container.querySelector('#opacity-val');
+    op?.addEventListener('input', (e) => {
+      opVal.textContent = `${e.target.value}%`;
+      this._applyOpacity(parseInt(e.target.value) / 100);
+    });
+
+    // Font size
+    const fs = this.container.querySelector('#font-size');
+    fs?.addEventListener('change', (e) => this._applyFontSize(parseInt(e.target.value)));
+
+    // Text alignment
+    this.container.querySelectorAll('.pp-align-btn').forEach(btn => {
+      btn.addEventListener('click', () => this._applyTextAlign(btn.dataset.align));
     });
   }
-  
-  _updateColor(c) {
-    if (this.ih.activeTool && this.ih.activeTool.name === 'select') {
-      const selectedIds = Array.from(this.em.selectedIds);
-      if (selectedIds.length > 0) {
-        for (const id of selectedIds) {
-          const el = this.em.elements.get(id);
-          if (el) {
-            if (el.type === 'text' || el.type === 'sticky') {
-              el.style.fillColor = c;
-            } else if (el.type === 'freehand' || el.type === 'line' || el.type === 'arrow') {
-              el.style.strokeColor = c;
-            } else {
-              // Shapes can have fill or stroke. Let's do fill if it's currently transparent?
-              // Standard behavior: clicking a color changes the stroke, unless it's a sticky note
-              // Actually, let's change stroke color, and if they click transparent, we change fill.
-              // For simplicity, change strokeColor.
-              el.style.strokeColor = c;
-            }
-            if (this.sync) this.sync.broadcastUpdate(el);
-          }
-        }
-        this.em.cm.requestStaticRender();
+
+  _applyColor(color, type) {
+    const isSelect = this.ih.activeTool?.name === 'select';
+    if (isSelect) {
+      for (const id of this.em.selectedIds) {
+        const el = this.em.elements.get(id);
+        if (!el) continue;
+        if (type === 'stroke') el.style.strokeColor = color;
+        else el.style.fillColor = color;
+        if (this.sync) this.sync.broadcastUpdate(el);
       }
-    } else {
-      if (this.ih.activeTool) {
-        this.ih.activeTool.color = c;
-      }
+      this.em.cm.requestStaticRender();
+    } else if (this.ih.activeTool) {
+      if (type === 'stroke') this.ih.activeTool.color = color;
+      else this.ih.activeTool.fillColor = color;
     }
   }
-  
-  _updateStroke(w) {
-    if (this.ih.activeTool && this.ih.activeTool.name === 'select') {
-      const selectedIds = Array.from(this.em.selectedIds);
-      if (selectedIds.length > 0) {
-        for (const id of selectedIds) {
-          const el = this.em.elements.get(id);
-          if (el) {
-            el.style.strokeWidth = w;
-            if (this.sync) this.sync.broadcastUpdate(el);
-          }
-        }
-        this.em.cm.requestStaticRender();
+
+  _applyStrokeWidth(w) {
+    if (this.ih.activeTool?.name === 'select') {
+      for (const id of this.em.selectedIds) {
+        const el = this.em.elements.get(id);
+        if (el) { el.style.strokeWidth = w; if (this.sync) this.sync.broadcastUpdate(el); }
       }
-    } else {
-      if (this.ih.activeTool) {
-        this.ih.activeTool.strokeWidth = w;
-      }
+      this.em.cm.requestStaticRender();
+    } else if (this.ih.activeTool) {
+      this.ih.activeTool.strokeWidth = w;
     }
   }
-  
+
+  _applyOpacity(val) {
+    if (this.ih.activeTool?.name === 'select') {
+      for (const id of this.em.selectedIds) {
+        const el = this.em.elements.get(id);
+        if (el) { el.opacity = val; if (this.sync) this.sync.broadcastUpdate(el); }
+      }
+      this.em.cm.requestStaticRender();
+    }
+  }
+
+  _applyFontSize(size) {
+    if (this.ih.activeTool?.name === 'select') {
+      for (const id of this.em.selectedIds) {
+        const el = this.em.elements.get(id);
+        if (el && (el.type === 'sticky' || el.type === 'text')) {
+          el.style.fontSize = size;
+          if (this.sync) this.sync.broadcastUpdate(el);
+        }
+      }
+      this.em.cm.requestStaticRender();
+    }
+  }
+
+  _applyTextAlign(align) {
+    if (this.ih.activeTool?.name === 'select') {
+      for (const id of this.em.selectedIds) {
+        const el = this.em.elements.get(id);
+        if (el && (el.type === 'sticky' || el.type === 'text')) {
+          el.style.textAlign = align;
+          if (this.sync) this.sync.broadcastUpdate(el);
+        }
+      }
+      this.em.cm.requestStaticRender();
+    }
+    // Update active button
+    this.container.querySelectorAll('.pp-align-btn').forEach(btn => {
+      btn.style.background = btn.dataset.align === align ? 'rgba(192,193,255,0.2)' : 'transparent';
+    });
+  }
+
+  /** Sync panel state to the currently selected element */
+  syncToSelection() {
+    if (this.ih.activeTool?.name !== 'select' || this.em.selectedIds.size === 0) return;
+    const id = [...this.em.selectedIds][0];
+    const el = this.em.elements.get(id);
+    if (!el) return;
+
+    // Show/hide font controls
+    const hasText = el.type === 'sticky' || el.type === 'text';
+    const fontGroup = this.container.querySelector('#font-group');
+    const fontDivider = this.container.querySelector('#font-divider');
+    if (fontGroup) fontGroup.style.display = hasText ? 'flex' : 'none';
+    if (fontDivider) fontDivider.style.display = hasText ? 'block' : 'none';
+
+    // Sync slider values
+    const sw = this.container.querySelector('#stroke-width');
+    const swVal = this.container.querySelector('#stroke-width-val');
+    if (sw && el.style.strokeWidth !== undefined) {
+      sw.value = el.style.strokeWidth;
+      if (swVal) swVal.textContent = el.style.strokeWidth;
+    }
+
+    const op = this.container.querySelector('#opacity-slider');
+    const opVal = this.container.querySelector('#opacity-val');
+    if (op) {
+      op.value = Math.round(el.opacity * 100);
+      if (opVal) opVal.textContent = `${Math.round(el.opacity * 100)}%`;
+    }
+
+    const fs = this.container.querySelector('#font-size');
+    if (fs && el.style.fontSize) fs.value = el.style.fontSize;
+  }
+
   show() {
     this.container.style.display = 'flex';
+    this.syncToSelection();
   }
-  
+
   hide() {
     this.container.style.display = 'none';
+  }
+
+  _injectPPStyles() {
+    if (document.getElementById('pp-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'pp-styles';
+    style.textContent = `
+      .pp-group { display:flex; align-items:center; gap:6px; }
+      .pp-label { font-size:10px; color:var(--on-surface-variant); font-family:var(--font-label); text-transform:uppercase; letter-spacing:0.05em; white-space:nowrap; }
+      .pp-val { font-size:11px; color:var(--on-surface-variant); font-family:var(--font-mono); min-width:28px; }
+      .pp-divider { width:1px; height:28px; background:rgba(255,255,255,0.08); flex-shrink:0; }
+      [data-theme="light"] .pp-divider { background:var(--outline-variant); }
+      .pp-swatches { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+      .pp-swatch {
+        width:22px; height:22px; border-radius:50%; cursor:pointer;
+        flex-shrink:0; transition:transform 0.15s, box-shadow 0.15s;
+        position:relative; overflow:hidden;
+      }
+      .pp-swatch:hover { transform:scale(1.25); box-shadow:0 0 0 2px var(--primary); }
+      .pp-custom-color {
+        width:22px; height:22px; border-radius:50%; cursor:pointer;
+        display:flex; align-items:center; justify-content:center;
+        background:rgba(255,255,255,0.05); border:1px dashed var(--outline);
+        color:var(--on-surface-variant); transition:all 0.15s;
+      }
+      .pp-custom-color:hover { background:rgba(192,193,255,0.15); color:var(--primary); }
+      .pp-align-btn {
+        width:24px; height:24px; border-radius:4px; border:none; background:transparent;
+        cursor:pointer; color:var(--on-surface-variant); display:flex; align-items:center; justify-content:center;
+        transition:all 0.15s;
+      }
+      .pp-align-btn:hover { background:rgba(255,255,255,0.08); color:var(--primary); }
+    `;
+    document.head.appendChild(style);
   }
 }

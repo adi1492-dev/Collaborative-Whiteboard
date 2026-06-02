@@ -160,21 +160,18 @@ func (c *Client) writePump() {
 				return
 			}
 
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
+			// Write each message as its own frame for clean JSON parsing
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
-			w.Write(message)
 
-			// Drain queued messages into the current write
+			// Drain remaining queued messages — each as a separate frame
 			n := len(c.Send)
 			for i := 0; i < n; i++ {
-				w.Write([]byte("\n"))
-				w.Write(<-c.Send)
-			}
-
-			if err := w.Close(); err != nil {
-				return
+				msg := <-c.Send
+				if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					return
+				}
 			}
 
 		case <-ticker.C:

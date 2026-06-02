@@ -1,6 +1,7 @@
 /**
  * BoardPage — The main whiteboard workspace.
- * Initializes the CanvasEngine, Tools, UI, and SyncManager.
+ * Production-ready: presence avatars, zoom controls, export, undo/redo,
+ * inline title editing, context menu, text editing, export.
  */
 import { CanvasManager } from '../canvas/CanvasManager.js';
 import { ElementManager } from '../elements/ElementManager.js';
@@ -8,7 +9,12 @@ import { InputHandler } from '../canvas/InputHandler.js';
 import { SyncManager } from '../sync/SyncManager.js';
 import { Toolbar } from '../ui/Toolbar.js';
 import { PropertyPanel } from '../ui/PropertyPanel.js';
+import { TextEditor } from '../ui/TextEditor.js';
+import { ContextMenu } from '../ui/ContextMenu.js';
 import { AIManager } from '../ai/AIManager.js';
+import { HistoryManager } from '../history/HistoryManager.js';
+import { ExportManager } from '../export/ExportManager.js';
+import { Toast } from '../ui/Toast.js';
 
 // Tools
 import { SelectTool } from '../tools/SelectTool.js';
@@ -20,7 +26,6 @@ import { EraserTool } from '../tools/EraserTool.js';
 import { ImageTool } from '../tools/ImageTool.js';
 import { Tool } from '../tools/Tool.js';
 
-// Simple Pan and Eraser stubs
 class PanTool extends Tool {
   constructor() { super('pan'); }
   onActivate() { this.cm.container.style.cursor = 'grab'; }
@@ -35,62 +40,91 @@ class PanTool extends Tool {
   }
 }
 
-
 export class BoardPage {
   constructor(root, app, boardId) {
     this.root = root;
     this.app = app;
     this.boardId = boardId;
     this.boardData = null;
-    
     this.render();
   }
 
   async render() {
-    // Basic Layout shell
     this.root.innerHTML = `
       <div class="board-layout">
-        <header class="board-header glass">
+        <header class="board-header glass" id="board-header">
           <div class="header-left">
-            <a href="#/dashboard" class="icon-btn" aria-label="Back to dashboard">
+            <a href="#/dashboard" class="icon-btn" aria-label="Back to dashboard" title="Dashboard">
               <span class="material-symbols-outlined">arrow_back</span>
             </a>
             <div class="board-title-group">
-              <h1 class="headline-sm truncate" id="board-title" style="font-size: 16px;">Loading...</h1>
+              <h1 class="headline-sm truncate board-title-editable" id="board-title" 
+                  style="font-size:16px;cursor:text;padding:2px 6px;border-radius:4px;max-width:220px;"
+                  title="Click to rename">Loading...</h1>
               <div id="latency-indicator" class="status-dot status-yellow" title="Connecting..."></div>
+              <div id="peer-count" class="peer-count-badge" style="display:none;" title="Connected peers">
+                <span class="material-symbols-outlined" style="font-size:12px">lan</span>
+                <span id="peer-count-num">0</span>
+              </div>
             </div>
-            <!-- Room Key display for owner -->
-            <div id="room-key-display" style="display: none; align-items: center; background: rgba(192, 193, 255, 0.1); padding: 4px 12px; border-radius: 16px; margin-left: 16px; border: 1px solid rgba(192, 193, 255, 0.2);">
-              <span class="material-symbols-outlined" style="font-size: 14px; color: var(--primary); margin-right: 6px;">key</span>
-              <span class="label-sm" style="color: var(--primary); font-family: monospace; letter-spacing: 1px;" id="room-key-text">------</span>
-              <span class="label-sm" style="color: var(--on-surface-variant); margin-left: 8px;" id="room-key-timer">(60s)</span>
+            <!-- Room Key for owner -->
+            <div id="room-key-display" style="display:none;align-items:center;background:rgba(192,193,255,0.1);padding:4px 10px;border-radius:16px;margin-left:12px;border:1px solid rgba(192,193,255,0.2);gap:6px;">
+              <span class="material-symbols-outlined" style="font-size:13px;color:var(--primary)">key</span>
+              <span class="label-sm" style="color:var(--primary);font-family:monospace;letter-spacing:2px;font-size:13px" id="room-key-text">------</span>
+              <span class="label-sm" style="color:var(--on-surface-variant);font-size:10px" id="room-key-timer">(60s)</span>
+              <button id="copy-key-btn" class="icon-btn" style="width:22px;height:22px;margin-left:2px;" title="Copy invite link">
+                <span class="material-symbols-outlined" style="font-size:14px">content_copy</span>
+              </button>
             </div>
           </div>
+
+          <div class="header-center">
+            <!-- Undo / Redo -->
+            <button class="icon-btn" id="undo-btn" title="Undo (Ctrl+Z)" disabled>
+              <span class="material-symbols-outlined">undo</span>
+            </button>
+            <button class="icon-btn" id="redo-btn" title="Redo (Ctrl+Y)" disabled>
+              <span class="material-symbols-outlined">redo</span>
+            </button>
+            <!-- Zoom controls -->
+            <div class="zoom-controls">
+              <button class="icon-btn" id="zoom-out-btn" title="Zoom out">
+                <span class="material-symbols-outlined">remove</span>
+              </button>
+              <span id="zoom-display" style="font-size:12px;min-width:42px;text-align:center;font-family:var(--font-mono);color:var(--on-surface-variant)">100%</span>
+              <button class="icon-btn" id="zoom-in-btn" title="Zoom in">
+                <span class="material-symbols-outlined">add</span>
+              </button>
+              <button class="icon-btn" id="zoom-reset-btn" title="Reset zoom (fit board)">
+                <span class="material-symbols-outlined">fit_screen</span>
+              </button>
+            </div>
+          </div>
+
           <div class="header-right">
-            <!-- Presence avatars will go here -->
+            <!-- Presence avatars -->
             <div id="presence-bar" class="presence-bar"></div>
             
-            
-            <!-- AI Assist Button (Phase 4) -->
-            <button class="btn btn-ghost ai-assist-btn" id="ai-assist-btn" style="color: var(--tertiary); padding: 6px 12px; height: auto;">
-              <span class="material-symbols-outlined" style="font-size:16px; margin-right:4px;">auto_awesome</span> 
-              AI Assist
+            <!-- AI Assist -->
+            <button class="btn btn-ghost ai-assist-btn" id="ai-assist-btn" style="color:var(--tertiary);padding:6px 12px;height:auto;">
+              <span class="material-symbols-outlined" style="font-size:16px;margin-right:4px;">auto_awesome</span>AI
             </button>
-            
-            <button class="btn btn-outline" style="padding: 6px 12px; height: auto;" id="share-btn">
-              <span class="material-symbols-outlined" style="font-size:16px;">share</span> Share
+
+            <!-- Export -->
+            <button class="btn btn-outline" id="export-btn" style="padding:6px 12px;height:auto;">
+              <span class="material-symbols-outlined" style="font-size:16px">download</span>Export
             </button>
-            <button class="btn btn-primary" style="padding: 6px 12px; height: auto; background: var(--primary); color: var(--on-primary); border: none; border-radius: var(--radius);" id="manual-save-btn">
-              <span class="material-symbols-outlined" style="font-size:16px;">save</span> <span id="save-btn-text">Save</span>
+
+            <!-- Save -->
+            <button class="btn btn-primary" id="manual-save-btn" style="padding:6px 12px;height:auto;">
+              <span class="material-symbols-outlined" style="font-size:16px">save</span>
+              <span id="save-btn-text">Save</span>
             </button>
           </div>
         </header>
 
         <div class="board-workspace">
-          <!-- Canvas Container -->
           <div id="canvas-container" class="canvas-container"></div>
-          
-          <!-- UI Overlays -->
           <div id="ui-container" class="ui-container"></div>
         </div>
       </div>
@@ -98,19 +132,18 @@ export class BoardPage {
 
     this._injectStyles();
 
-    // Fetch Board Data
     try {
       const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}`);
       if (!res.ok) throw new Error('Board not found');
-      
       const data = await res.json();
       this.boardData = data.board;
       this.root.querySelector('#board-title').textContent = this.boardData.title;
-      
       this._initEngine(data.elements || []);
       this._initRoomKey();
+      this._initTitleEditing();
     } catch (err) {
-      alert("Failed to load board: " + err.message);
+      console.error('Failed to load board:', err);
+      alert('Failed to load board: ' + err.message);
       this.app.navigate('/dashboard');
     }
   }
@@ -118,25 +151,26 @@ export class BoardPage {
   _initEngine(initialElements) {
     const canvasContainer = this.root.querySelector('#canvas-container');
     const uiContainer = this.root.querySelector('#ui-container');
+    if (!canvasContainer) return;
 
-    if (!canvasContainer) {
-      console.warn("Canvas container not found, aborting engine init (page probably navigated away)");
-      return;
-    }
-
-    // 1. Initialize Canvas Manager
+    // 1. Canvas Manager
     this.cm = new CanvasManager(canvasContainer, this.boardId);
     this.cm.setBackground(this.boardData.background);
 
-    // 2. Initialize Element Manager
+    // 2. Element Manager
     this.em = new ElementManager(this.cm);
     this.cm.elementManager = this.em;
 
-    // 3. Initialize Input Handler
+    // 3. Input Handler
     this.ih = new InputHandler(this.cm, this.em);
     this.cm.inputHandler = this.ih;
 
-    // 4. Register Tools
+    // 4. History Manager
+    this.history = new HistoryManager();
+    this.cm.historyManager = this.history;
+    this.ih.historyManager = this.history;
+
+    // 5. Register Tools
     this.ih.registerTool('select', new SelectTool());
     this.ih.registerTool('pan', new PanTool());
     this.ih.registerTool('pen', new PenTool());
@@ -155,44 +189,57 @@ export class BoardPage {
     
     this.ih.setActiveTool('select');
 
-    // 5. Initialize UI
-    this.toolbar = new Toolbar(uiContainer, this.ih);
-    
-    // 6. Initialize Sync Layer
+    // 6. Sync Layer
     this.sync = new SyncManager(this.app, this.boardId, this.cm);
-    this.cm.syncManager = this.sync; // Wire it up so tools can access it!
+    this.cm.syncManager = this.sync;
 
-    // 7. Initialize Property Panel
+    // 7. Text Editor
+    this.textEditor = new TextEditor(this.cm);
+    this.cm.textEditor = this.textEditor;
+
+    // 8. Context Menu
+    this.contextMenu = new ContextMenu(this.em, this.sync, this.history);
+    this.ih.contextMenu = this.contextMenu;
+
+    // 9. Export Manager
+    this.exportMgr = new ExportManager(this.cm, this.em);
+
+    // 10. Toolbar & Property Panel
+    this.toolbar = new Toolbar(uiContainer, this.ih);
     this.propertyPanel = new PropertyPanel(uiContainer, this.ih, this.em, this.sync);
 
-    // Dynamic Property Panel Visibility
+    // 11. AI Manager
+    this.ai = new AIManager(this.app, this);
+    this.root.querySelector('#ai-assist-btn')?.addEventListener('click', () => {
+      this.ai.summarizeBoard();
+    });
+
+    // Dynamic property panel
     const originalSetActive = this.ih.setActiveTool.bind(this.ih);
     this.ih.setActiveTool = (toolId) => {
       originalSetActive(toolId);
-      if (toolId === 'select' || toolId === 'pan' || toolId === 'eraser') {
-        if (toolId === 'select' && this.em.selectedIds.size > 0) {
-          this.propertyPanel.show();
-        } else {
-          this.propertyPanel.hide();
-        }
-      } else {
+      if (toolId === 'select' && this.em.selectedIds.size > 0) {
         this.propertyPanel.show();
+      } else if (toolId !== 'select' && toolId !== 'pan' && toolId !== 'eraser') {
+        this.propertyPanel.show();
+      } else {
+        this.propertyPanel.hide();
       }
     };
 
     const originalSelect = this.em.select.bind(this.em);
     this.em.select = (id, add) => {
       originalSelect(id, add);
-      if (this.ih.activeTool && this.ih.activeTool.name === 'select') this.propertyPanel.show();
+      if (this.ih.activeTool?.name === 'select') this.propertyPanel.show();
     };
 
     const originalClear = this.em.clearSelection.bind(this.em);
     this.em.clearSelection = () => {
       originalClear();
-      if (this.ih.activeTool && this.ih.activeTool.name === 'select') this.propertyPanel.hide();
+      if (this.ih.activeTool?.name === 'select') this.propertyPanel.hide();
     };
-    
-    // Bind HA Status UI
+
+    // 12. Connection status
     const statusDot = this.root.querySelector('#latency-indicator');
     if (statusDot) {
       this.sync.ws.on('connected', () => {
@@ -201,42 +248,82 @@ export class BoardPage {
       });
       this.sync.ws.on('disconnected', () => {
         statusDot.className = 'status-dot status-red';
-        statusDot.title = 'Offline (Saving Locally)';
-      });
-      this.sync.ws.on('syncing', () => {
-        statusDot.className = 'status-dot status-yellow';
-        statusDot.title = 'Syncing...';
+        statusDot.title = 'Offline (Reconnecting...)';
       });
     }
 
-    // 7. Initialize AI Manager
-    this.ai = new AIManager(this.app, this);
-    
-    // Bind AI button
-    this.root.querySelector('#ai-assist-btn')?.addEventListener('click', () => {
-      // Context menu for AI
-      const isShift = window.event && window.event.shiftKey;
-      if (isShift) {
-        this.ai.organizeSelection();
-      } else {
-        this.ai.summarizeBoard();
+    // 13. Presence avatars & peer toasts
+    this.sync.ws.on('peer_joined', (msg) => {
+      this._updatePresenceBar();
+      if (msg.userName && msg.userId !== this.sync.userId) {
+        Toast.show(`${msg.userName} joined the canvas`, 'info', 3000);
       }
+      // Update P2P count after a short delay for connection to settle
+      setTimeout(() => this._updatePeerCount(), 1500);
+    });
+    this.sync.ws.on('peer_left', (msg) => {
+      this._updatePresenceBar();
+      if (msg.userName && msg.userId !== this.sync.userId) {
+        Toast.show(`${msg.userName} left the canvas`, 'warning', 3000);
+      }
+      setTimeout(() => this._updatePeerCount(), 500);
     });
 
-    // Load initial elements (these come from the REST API, not WS)
-    // Needs hydration similar to SyncManager
+    // 14. Load initial elements
     const hydratedElements = initialElements.map(el => this.sync._hydrateElement(el)).filter(Boolean);
     this.em.setElements(hydratedElements);
-
-    // Zoom to fit if there are elements
     if (hydratedElements.length > 0) {
-      // Very simple center pan (can be improved)
-      const firstEl = hydratedElements[0];
-      const rect = canvasContainer.getBoundingClientRect();
-      this.cm.transform.panTo(rect.width/2 - firstEl.x, rect.height/2 - firstEl.y);
+      setTimeout(() => this.cm.zoomToFit(), 100);
     }
 
-    // Bind Manual Save button and Tool-exit Auto-Save
+    // 15. Zoom controls
+    this._initZoomControls();
+
+    // 16. Save button
+    this._initSaveButton();
+
+    // 17. Export button
+    this.root.querySelector('#export-btn')?.addEventListener('click', (e) => {
+      this.exportMgr.showExportMenu(e.currentTarget, this.boardData?.title);
+    });
+
+    // 18. Undo/Redo buttons
+    this.root.querySelector('#undo-btn')?.addEventListener('click', () => this.history.undo());
+    this.root.querySelector('#redo-btn')?.addEventListener('click', () => this.history.redo());
+
+    // 19. Beforeunload
+    this.handleBeforeUnload = () => {
+      if (this.sync?.dirtyElements.size > 0) this.sync.forceSave();
+    };
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
+
+    // P2P count update every 5s
+    this._peerCountInterval = setInterval(() => this._updatePeerCount(), 5000);
+  }
+
+  _initZoomControls() {
+    const updateDisplay = () => {
+      const el = document.getElementById('zoom-display');
+      if (el) el.textContent = `${Math.round(this.cm.transform.scale * 100)}%`;
+    };
+
+    this.root.querySelector('#zoom-in-btn')?.addEventListener('click', () => {
+      this.cm.transform.zoom(0.1, this.cm.width / 2, this.cm.height / 2);
+      this.cm.requestStaticRender();
+      updateDisplay();
+    });
+    this.root.querySelector('#zoom-out-btn')?.addEventListener('click', () => {
+      this.cm.transform.zoom(-0.1, this.cm.width / 2, this.cm.height / 2);
+      this.cm.requestStaticRender();
+      updateDisplay();
+    });
+    this.root.querySelector('#zoom-reset-btn')?.addEventListener('click', () => {
+      this.cm.zoomToFit();
+      updateDisplay();
+    });
+  }
+
+  _initSaveButton() {
     const saveBtn = this.root.querySelector('#manual-save-btn');
     const saveBtnText = this.root.querySelector('#save-btn-text');
     
@@ -245,24 +332,19 @@ export class BoardPage {
     
     const triggerSave = async (isManual = false) => {
       if (!saveBtn) return;
-      if (isSaving) {
-        saveQueued = true;
-        return;
-      }
+      if (isSaving) { saveQueued = true; return; }
       
       isSaving = true;
       saveBtn.disabled = true;
       saveBtnText.textContent = 'Saving...';
       
       if (isManual) {
-        // Force a full save of all elements on manual click
         for (const el of this.em.elements.values()) {
           this.sync.dirtyElements.set(el.id, el.toJSON());
         }
       }
       
       const success = await this.sync.forceSave();
-      
       saveBtnText.textContent = success ? 'Saved!' : 'Failed';
       isSaving = false;
       
@@ -281,53 +363,96 @@ export class BoardPage {
 
     if (saveBtn) {
       saveBtn.addEventListener('click', () => triggerSave(true));
-      
-      // Auto-trigger using the robust data-layer debounce
       this.sync.onSaveTriggered = () => triggerSave(false);
     }
-
-    // Bind beforeunload
-    this.handleBeforeUnload = (e) => {
-      if (this.sync && this.sync.dirtyElements.size > 0) {
-        this.sync.forceSave();
-      }
-    };
-    window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
 
-  destroy() {
-    window.removeEventListener('beforeunload', this.handleBeforeUnload);
-    if (this.cm) this.cm.stopRenderLoop();
-    if (this.sync) this.sync.destroy();
-    if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
-    if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
+  _initTitleEditing() {
+    const titleEl = this.root.querySelector('#board-title');
+    if (!titleEl) return;
+
+    titleEl.addEventListener('click', () => {
+      const current = titleEl.textContent;
+      const input = document.createElement('input');
+      input.value = current;
+      input.style.cssText = `
+        font-size:16px;font-family:inherit;font-weight:inherit;
+        background:rgba(255,255,255,0.1);border:1px solid var(--primary);
+        border-radius:4px;padding:2px 8px;color:var(--on-surface);
+        outline:none;width:${Math.max(120, current.length * 10)}px;
+      `;
+      titleEl.replaceWith(input);
+      input.focus();
+      input.select();
+
+      const commit = async () => {
+        const newTitle = input.value.trim() || current;
+        titleEl.textContent = newTitle;
+        input.replaceWith(titleEl);
+        if (newTitle !== current) {
+          try {
+            await this.app.auth.apiFetch(`/api/boards/${this.boardId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title: newTitle })
+            });
+            this.boardData.title = newTitle;
+          } catch (err) {
+            console.error('Failed to rename board:', err);
+          }
+        }
+      };
+
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { input.value = current; commit(); }
+      });
+    });
+  }
+
+  _updatePresenceBar() {
+    const bar = this.root.querySelector('#presence-bar');
+    if (!bar || !this.sync) return;
+    // Presence data comes from WebSocket room user list (simplify: show colors from peers)
+    // We'll show a simple avatar for the local user
+    const user = this.app.auth.getUser();
+    if (!user) return;
+    const initials = (user.displayName || user.name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const color = '#c0c1ff';
+    bar.innerHTML = `
+      <div class="presence-avatar" title="${user.displayName || user.name || 'You'} (You)" style="background:${color};">
+        ${initials}
+      </div>
+    `;
+  }
+
+  _updatePeerCount() {
+    if (!this.sync?.p2p) return;
+    const count = this.sync.p2p.connectedPeerCount;
+    const badge = document.getElementById('peer-count');
+    const num = document.getElementById('peer-count-num');
+    if (badge && num) {
+      num.textContent = count;
+      badge.style.display = count > 0 ? 'flex' : 'none';
+    }
   }
 
   async _initRoomKey() {
     const user = this.app.auth.getUser();
-    if (!user) {
-      console.warn("No user found in auth, cannot initialize room key.");
-      return;
-    }
+    if (!user) return;
     
     const userId = user._id || user.id;
-    console.log("Initializing Room Key. Board ownerId:", this.boardData.ownerId, "User ID:", userId);
-
-    const getUserIdStr = (rawId) => {
-      if (!rawId) return '';
-      if (typeof rawId === 'string') return rawId;
-      if (typeof rawId === 'object') {
-        if (rawId.$oid) return rawId.$oid;
-        return rawId.toString();
-      }
-      return String(rawId);
+    const getUserIdStr = (id) => {
+      if (!id) return '';
+      if (typeof id === 'string') return id;
+      if (id.$oid) return id.$oid;
+      return String(id);
     };
 
     const ownerIdStr = getUserIdStr(this.boardData.ownerId);
     const userIdStr = getUserIdStr(userId);
 
-    console.log("Normalized ownerId:", ownerIdStr, "Normalized userId:", userIdStr);
-    
     if (ownerIdStr && userIdStr && ownerIdStr === userIdStr) {
       const display = this.root.querySelector('#room-key-display');
       const text = this.root.querySelector('#room-key-text');
@@ -342,21 +467,16 @@ export class BoardPage {
           const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/key/refresh`, { method: 'POST' });
           if (res.ok) {
             const data = await res.json();
-            console.log("Room key refreshed successfully:", data.roomKey);
             if (text) text.textContent = data.roomKey;
             secondsLeft = 60;
-          } else {
-            console.error("Failed to refresh room key, status:", res.status);
           }
         } catch (err) {
-          console.error("Failed to refresh room key", err);
+          console.error('Failed to refresh room key', err);
         }
       };
 
-      // Initial fetch
       await refreshKey();
       
-      // Update timer every second
       if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
       this.keyTimerInterval = setInterval(() => {
         if (secondsLeft > 0) {
@@ -365,74 +485,149 @@ export class BoardPage {
         }
       }, 1000);
       
-      // Fetch new key every 60 seconds
       if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
       this.keyRefreshInterval = setInterval(refreshKey, 60000);
-    } else {
-      console.log("Current user is not the owner of this board. Room key display remains hidden.");
+
+      // Copy invite link
+      this.root.querySelector('#copy-key-btn')?.addEventListener('click', () => {
+        const key = text?.textContent?.trim();
+        if (key) {
+          const url = `${window.location.origin}${window.location.pathname}#/join/${key}`;
+          navigator.clipboard.writeText(url).then(() => {
+            Toast.show('Invite link copied to clipboard!', 'success', 2500);
+          });
+        }
+      });
     }
   }
 
+  destroy() {
+    window.removeEventListener('beforeunload', this.handleBeforeUnload);
+    if (this.cm) this.cm.stopRenderLoop();
+    if (this.sync) this.sync.destroy();
+    if (this.textEditor) this.textEditor.destroy();
+    if (this.contextMenu) this.contextMenu.destroy();
+    if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
+    if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
+    if (this._peerCountInterval) clearInterval(this._peerCountInterval);
+  }
+
   _injectStyles() {
-    if (!document.getElementById('board-styles')) {
-      const style = document.createElement('style');
-      style.id = 'board-styles';
-      style.textContent = `
-        .board-layout { display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--surface); }
-        
-        .board-header {
-          position: absolute; top: 0; left: 0; width: 100%; height: 56px;
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 0 var(--space-md); z-index: 100;
-          border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        [data-theme="light"] .board-header { border-bottom-color: var(--outline-variant); }
-        
-        .header-left, .header-right { display: flex; align-items: center; gap: var(--space-md); }
-        
-        .icon-btn {
-          width: 32px; height: 32px; border-radius: var(--radius);
-          display: flex; align-items: center; justify-content: center;
-          color: var(--on-surface-variant); text-decoration: none; transition: background 0.2s;
-        }
-        .icon-btn:hover { background: rgba(255,255,255,0.05); color: var(--on-surface); }
-        
-        .board-title-group { display: flex; align-items: center; gap: 8px; }
-        
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
-        .status-green { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.5); }
-        .status-yellow { background: #eab308; box-shadow: 0 0 8px rgba(234, 179, 8, 0.5); }
-        .status-red { background: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
-        
-        .board-workspace { position: relative; flex: 1; margin-top: 56px; }
-        .canvas-container { position: absolute; inset: 0; z-index: 1; touch-action: none; }
-        .ui-container { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
-        
-        /* Toolbar */
-        .canvas-toolbar {
-          position: absolute; left: 50%; bottom: var(--space-xl); transform: translateX(-50%);
-          display: flex; align-items: center; padding: 6px; border-radius: var(--radius-xl);
-          pointer-events: auto; background: var(--surface-container); border: 1px solid rgba(255,255,255,0.1);
-        }
-        [data-theme="light"] .canvas-toolbar { background: var(--surface-container-lowest); border-color: var(--outline-variant); }
-        
-        .toolbar-btn {
-          width: 40px; height: 40px; border-radius: 50%; border: none; background: transparent;
-          color: var(--on-surface-variant); cursor: pointer; display: flex; align-items: center; justify-content: center;
-          transition: all 0.2s; position: relative;
-        }
-        .toolbar-btn:hover { color: var(--on-surface); background: rgba(255,255,255,0.05); }
-        [data-theme="light"] .toolbar-btn:hover { background: rgba(0,0,0,0.04); }
-        
-        .toolbar-btn.active { color: var(--primary); background: rgba(192,193,255,0.1); }
-        [data-theme="light"] .toolbar-btn.active { background: rgba(63, 59, 189, 0.08); }
-        
-        .toolbar-divider { width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 4px; }
-        [data-theme="light"] .toolbar-divider { background: var(--outline-variant); }
-        
-        .presence-bar { display: flex; }
-      `;
-      document.head.appendChild(style);
-    }
+    if (document.getElementById('board-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'board-styles';
+    style.textContent = `
+      .board-layout { display:flex; flex-direction:column; height:100vh; overflow:hidden; background:var(--surface); }
+      
+      .board-header {
+        position:absolute; top:0; left:0; width:100%;
+        display:flex; align-items:center; justify-content:space-between;
+        padding:0 16px; z-index:100; height:56px;
+        border-bottom:1px solid rgba(255,255,255,0.05);
+        gap:12px;
+      }
+      [data-theme="light"] .board-header { border-bottom-color:var(--outline-variant); }
+      
+      .header-left, .header-right { display:flex; align-items:center; gap:8px; }
+      .header-center { display:flex; align-items:center; gap:4px; }
+
+      .icon-btn {
+        width:32px; height:32px; border-radius:8px;
+        display:flex; align-items:center; justify-content:center;
+        color:var(--on-surface-variant); text-decoration:none;
+        background:transparent; border:none; cursor:pointer;
+        transition:all 0.15s ease;
+      }
+      .icon-btn:hover:not([disabled]) { background:rgba(255,255,255,0.08); color:var(--on-surface); }
+      .icon-btn[disabled] { opacity:0.35; cursor:default; }
+      [data-theme="light"] .icon-btn:hover:not([disabled]) { background:rgba(0,0,0,0.06); }
+      
+      .board-title-group { display:flex; align-items:center; gap:8px; }
+      .board-title-editable:hover { background:rgba(255,255,255,0.05); }
+      [data-theme="light"] .board-title-editable:hover { background:rgba(0,0,0,0.04); }
+      
+      .status-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+      .status-green { background:#22c55e; box-shadow:0 0 8px rgba(34,197,94,0.5); }
+      .status-yellow { background:#eab308; box-shadow:0 0 8px rgba(234,179,8,0.5); animation: pulse-glow 1.5s ease-in-out infinite; }
+      .status-red { background:#ef4444; box-shadow:0 0 8px rgba(239,68,68,0.5); }
+      
+      .peer-count-badge {
+        display:flex; align-items:center; gap:3px; font-size:11px;
+        color:var(--secondary); background:rgba(76,215,246,0.12);
+        padding:2px 7px; border-radius:12px; font-family:var(--font-mono);
+      }
+      
+      .zoom-controls { display:flex; align-items:center; gap:2px; }
+      
+      .presence-bar { display:flex; gap:-4px; }
+      .presence-avatar {
+        width:28px; height:28px; border-radius:50%;
+        display:flex; align-items:center; justify-content:center;
+        font-size:11px; font-weight:700; color:#131313;
+        border:2px solid var(--surface-container);
+        cursor:default; flex-shrink:0;
+        transition:transform 0.2s;
+      }
+      .presence-avatar:hover { transform:scale(1.15) translateY(-2px); z-index:1; }
+      
+      .board-workspace { position:relative; flex:1; margin-top:56px; }
+      .canvas-container { position:absolute; inset:0; z-index:1; touch-action:none; }
+      .ui-container { position:absolute; inset:0; z-index:10; pointer-events:none; }
+      
+      .canvas-toolbar {
+        position:absolute; left:50%; bottom:24px; transform:translateX(-50%);
+        display:flex; align-items:center; padding:6px; border-radius:24px;
+        pointer-events:auto; background:var(--surface-container);
+        border:1px solid rgba(255,255,255,0.08);
+        box-shadow:0 8px 32px rgba(0,0,0,0.3);
+      }
+      [data-theme="light"] .canvas-toolbar { 
+        background:var(--surface-container-lowest); 
+        border-color:var(--outline-variant);
+        box-shadow:0 4px 20px rgba(0,0,0,0.1);
+      }
+      
+      .toolbar-btn {
+        width:40px; height:40px; border-radius:50%; border:none; background:transparent;
+        color:var(--on-surface-variant); cursor:pointer;
+        display:flex; align-items:center; justify-content:center;
+        transition:all 0.15s; position:relative;
+      }
+      .toolbar-btn:hover { color:var(--on-surface); background:rgba(255,255,255,0.07); transform:scale(1.05); }
+      [data-theme="light"] .toolbar-btn:hover { background:rgba(0,0,0,0.05); }
+      .toolbar-btn.active { color:var(--primary); background:rgba(192,193,255,0.15); }
+      [data-theme="light"] .toolbar-btn.active { background:rgba(63,59,189,0.1); }
+      
+      .toolbar-divider { width:1px; height:24px; background:rgba(255,255,255,0.08); margin:0 4px; }
+      [data-theme="light"] .toolbar-divider { background:var(--outline-variant); }
+      
+      .property-panel {
+        background:var(--surface-container) !important;
+      }
+      [data-theme="light"] .property-panel {
+        background:var(--surface-container-lowest) !important;
+      }
+
+      /* Toolbar tooltip */
+      .toolbar-btn[title]:hover::after {
+        content: attr(title);
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--surface-container-highest);
+        color: var(--on-surface);
+        font-size: 11px;
+        white-space: nowrap;
+        padding: 4px 8px;
+        border-radius: 6px;
+        pointer-events: none;
+        font-family: var(--font-body);
+        border: 1px solid rgba(255,255,255,0.1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        z-index: 9999;
+      }
+    `;
+    document.head.appendChild(style);
   }
 }

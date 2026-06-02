@@ -54,6 +54,9 @@ class ToastManager {
         .toast-item.toast-info {
           border-left: 4px solid #3f3bbd;
         }
+        .toast-item.toast-warning {
+          border-left: 4px solid #f59e0b;
+        }
         .toast-icon {
           display: flex;
           align-items: center;
@@ -62,6 +65,7 @@ class ToastManager {
         .toast-success .toast-icon { color: #22c55e; }
         .toast-error .toast-icon { color: #ef4444; }
         .toast-info .toast-icon { color: #8ab4f8; }
+        .toast-warning .toast-icon { color: #f59e0b; }
         
         .toast-content {
           font-family: 'Inter', sans-serif;
@@ -119,6 +123,7 @@ class ToastManager {
     let iconName = 'info';
     if (type === 'success') iconName = 'check_circle';
     if (type === 'error') iconName = 'warning';
+    if (type === 'warning') iconName = 'person_off';
     
     toast.innerHTML = `
       <div class="toast-icon">
@@ -154,6 +159,7 @@ class ToastManager {
   success(message) { this.show(message, 'success'); }
   error(message) { this.show(message, 'error'); }
   info(message) { this.show(message, 'info'); }
+  warning(message) { this.show(message, 'warning'); }
 }
 
 export const Toast = new ToastManager();

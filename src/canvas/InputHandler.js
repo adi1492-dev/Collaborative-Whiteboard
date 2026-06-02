@@ -1,6 +1,6 @@
 /**
  * InputHandler — Centralizes pointer, touch, and keyboard events.
- * Delegates actions to the currently active tool or handles global shortcuts (pan, zoom).
+ * Delegates actions to the currently active tool or handles global shortcuts.
  */
 export class InputHandler {
   constructor(canvasManager, elementManager) {
@@ -13,6 +13,10 @@ export class InputHandler {
     this.isSpaceDown = false;
     this.isPanning = false;
     this.lastPanPoint = null;
+
+    // External managers injected after construction
+    this.historyManager = null;
+    this.contextMenu = null;
 
     this._bindEvents();
   }
@@ -35,24 +39,29 @@ export class InputHandler {
   _bindEvents() {
     const container = this.cm.container;
 
-    // Pointer Events (Mouse, Pen, Touch)
     container.addEventListener('pointerdown', this._onPointerDown.bind(this));
     window.addEventListener('pointermove', this._onPointerMove.bind(this));
     window.addEventListener('pointerup', this._onPointerUp.bind(this));
     
-    // Prevent context menu
-    container.addEventListener('contextmenu', e => e.preventDefault());
+    // Prevent default context menu; show custom one
+    container.addEventListener('contextmenu', this._onContextMenu.bind(this));
 
-    // Wheel (Zoom & Pan)
     container.addEventListener('wheel', this._onWheel.bind(this), { passive: false });
 
-    // Keyboard Shortcuts
     window.addEventListener('keydown', this._onKeyDown.bind(this));
     window.addEventListener('keyup', this._onKeyUp.bind(this));
   }
 
+  _onContextMenu(e) {
+    e.preventDefault();
+    if (!this.contextMenu) return;
+    const pt = this.cm.getPointerEventCoords(e);
+    const el = this.em.getElementAt(pt.x, pt.y);
+    if (el) this.em.select(el.id, true);
+    this.contextMenu.show(e.clientX, e.clientY, el || null);
+  }
+
   _onPointerDown(e) {
-    // Only handle left click or primary touch/pen
     if (e.button !== 0 && e.pointerType === 'mouse' && e.button !== 1) return;
     
     e.preventDefault();
@@ -60,7 +69,6 @@ export class InputHandler {
 
     const pt = this.cm.getPointerEventCoords(e);
     
-    // Middle click or Space+Click initiates panning regardless of tool
     if (e.button === 1 || this.isSpaceDown) {
       this.isPanning = true;
       this.lastPanPoint = { x: e.clientX, y: e.clientY };
@@ -76,7 +84,6 @@ export class InputHandler {
   _onPointerMove(e) {
     const pt = this.cm.getPointerEventCoords(e);
 
-    // Broadcast cursor position (throttled inside PresenceSync)
     if (this.cm.syncManager) {
       this.cm.syncManager.presenceSync.updateCursor(pt.x, pt.y);
     }
@@ -119,19 +126,24 @@ export class InputHandler {
     const screenY = e.clientY - rect.top;
 
     if (e.ctrlKey || e.metaKey) {
-      // Zoom
-      const zoomFactor = -e.deltaY * 0.01;
+      const zoomFactor = -e.deltaY * 0.005;
       this.cm.transform.zoom(zoomFactor, screenX, screenY);
     } else {
-      // Pan (trackpad)
       this.cm.transform.panBy(-e.deltaX, -e.deltaY);
     }
     
     this.cm.requestStaticRender();
+    this._updateZoomUI();
+  }
+
+  _updateZoomUI() {
+    const zoomDisplay = document.getElementById('zoom-display');
+    if (zoomDisplay) {
+      zoomDisplay.textContent = `${Math.round(this.cm.transform.scale * 100)}%`;
+    }
   }
 
   _onKeyDown(e) {
-    // Don't trigger shortcuts if user is typing in an input/textarea
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
       return;
     }
@@ -141,13 +153,78 @@ export class InputHandler {
       this.cm.container.style.cursor = 'grab';
     }
 
-    // Global keyboard shortcuts
+    const isCtrl = e.ctrlKey || e.metaKey;
+
+    // --- Ctrl shortcuts ---
+    if (isCtrl) {
+      switch (e.key.toLowerCase()) {
+        case 'z':
+          e.preventDefault();
+          if (e.shiftKey) {
+            this.historyManager?.redo();
+          } else {
+            this.historyManager?.undo();
+          }
+          return;
+        case 'y':
+          e.preventDefault();
+          this.historyManager?.redo();
+          return;
+        case 'c':
+          e.preventDefault();
+          if (this.contextMenu && this.em.selectedIds.size > 0) {
+            const id = [...this.em.selectedIds][0];
+            const el = this.em.elements.get(id);
+            if (el) this.contextMenu.setClipboard(el.toJSON());
+          }
+          return;
+        case 'v':
+          e.preventDefault();
+          if (this.contextMenu) {
+            const clip = this.contextMenu.getClipboard();
+            if (clip && this.cm.syncManager) {
+              const clone = { ...clip, id: Date.now().toString(36), x: clip.x + 20, y: clip.y + 20 };
+              const hydrated = this.cm.syncManager._hydrateElement(clone);
+              if (hydrated) {
+                this.em.setElement(hydrated);
+                this.cm.syncManager.broadcastCreate(hydrated);
+              }
+            }
+          }
+          return;
+        case 'd':
+          e.preventDefault();
+          if (this.em.selectedIds.size > 0 && this.cm.syncManager) {
+            const id = [...this.em.selectedIds][0];
+            const el = this.em.elements.get(id);
+            if (el) {
+              const clone = { ...el.toJSON(), id: Date.now().toString(36), x: el.x + 20, y: el.y + 20 };
+              const hydrated = this.cm.syncManager._hydrateElement(clone);
+              if (hydrated) {
+                this.em.setElement(hydrated);
+                this.cm.syncManager.broadcastCreate(hydrated);
+                this.em.select(hydrated.id, true);
+              }
+            }
+          }
+          return;
+        case 'a':
+          e.preventDefault();
+          for (const id of this.em.elements.keys()) this.em.selectedIds.add(id);
+          this.cm.requestStaticRender();
+          return;
+      }
+    }
+
+    // --- Tool shortcuts ---
     switch (e.key.toLowerCase()) {
       case 'v': this.setActiveTool('select'); break;
+      case 'h': this.setActiveTool('pan'); break;
       case 'p': this.setActiveTool('pen'); break;
       case 'r': this.setActiveTool('rectangle'); break;
       case 'o': this.setActiveTool('ellipse'); break;
       case 'l': this.setActiveTool('line'); break;
+      case 'a': this.setActiveTool('arrow'); break;
       case 's': this.setActiveTool('sticky'); break;
       case 't': this.setActiveTool('text'); break;
       case 'e': this.setActiveTool('eraser'); break;
@@ -155,15 +232,23 @@ export class InputHandler {
       case 'delete':
         if (this.em) this.em.deleteSelection();
         break;
-      case 'z':
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          if (e.shiftKey) {
-            // this.em.history.redo(); // TODO: Implement HistoryManager
-          } else {
-            // this.em.history.undo();
-          }
+      case '[':
+        if (this.em.selectedIds.size > 0 && this.cm.syncManager) {
+          const id = [...this.em.selectedIds][0];
+          const el = this.em.elements.get(id);
+          if (el) { el.zIndex--; el.updatedAt = Date.now(); this.em._sortElements(); this.cm.requestStaticRender(); this.cm.syncManager.broadcastUpdate(el); }
         }
+        break;
+      case ']':
+        if (this.em.selectedIds.size > 0 && this.cm.syncManager) {
+          const id = [...this.em.selectedIds][0];
+          const el = this.em.elements.get(id);
+          if (el) { el.zIndex++; el.updatedAt = Date.now(); this.em._sortElements(); this.cm.requestStaticRender(); this.cm.syncManager.broadcastUpdate(el); }
+        }
+        break;
+      case 'escape':
+        this.em.clearSelection();
+        this.cm.requestStaticRender();
         break;
     }
 

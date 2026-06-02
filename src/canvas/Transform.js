@@ -7,9 +7,15 @@ export class Transform {
     this.x = 0;
     this.y = 0;
     this.scale = 1;
-    this.minScale = 0.1;
-    this.maxScale = 5;
+    this.minScale = 0.05;
+    this.maxScale = 8;
   }
+
+  /** Alias for x (used by TextEditor for positioning) */
+  get panX() { return this.x; }
+  set panX(v) { this.x = v; }
+  get panY() { return this.y; }
+  set panY(v) { this.y = v; }
 
   /**
    * Convert screen coordinates to canvas world coordinates.
@@ -79,6 +85,8 @@ export class Transform {
    * Apply transform to a canvas context.
    */
   applyToContext(ctx) {
+    // Note: CanvasManager already set the DPR scale via setTransform.
+    // We apply the world transform on top by resetting to the DPR-scaled identity first.
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(this.scale * dpr, 0, 0, this.scale * dpr, this.x * dpr, this.y * dpr);
   }

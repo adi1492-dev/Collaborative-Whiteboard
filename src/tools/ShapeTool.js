@@ -1,17 +1,18 @@
 /**
  * ShapeTool — Draws rectangles, ellipses, lines, and arrows.
+ * With HistoryManager integration.
  */
 import { Tool } from './Tool.js';
 import { ShapeElement } from '../elements/ShapeElement.js';
 
 export class ShapeTool extends Tool {
   constructor(shapeType = 'rectangle') {
-    super(shapeType); // name is the shape type
+    super(shapeType);
     this.shapeType = shapeType;
     this.isDrawing = false;
     this.startPt = null;
     this.currentElement = null;
-    this.color = '#c0c1ff'; // Primary
+    this.color = '#c0c1ff';
     this.fillColor = 'transparent';
     this.strokeWidth = 2;
   }
@@ -38,11 +39,6 @@ export class ShapeTool extends Tool {
       },
       createdBy: this.cm.syncManager ? this.cm.syncManager.userId : 'local'
     });
-    
-    // INSTANT SAVE
-    if (this.cm.syncManager) {
-      this.cm.syncManager.broadcastCreate(this.currentElement);
-    }
   }
 
   onPointerMove(pt, e) {
@@ -62,7 +58,6 @@ export class ShapeTool extends Tool {
         const max = Math.max(w, h);
         w = max;
         h = max;
-        
         if (pt.x < this.startPt.x) this.currentElement.x = this.startPt.x - w;
         if (pt.y < this.startPt.y) this.currentElement.y = this.startPt.y - h;
       }
@@ -71,10 +66,17 @@ export class ShapeTool extends Tool {
       this.currentElement.height = h;
     }
     
-    // INSTANT SYNC
-    if (this.cm.syncManager) {
-      this.cm.syncManager.broadcastUpdate(this.currentElement);
+    // Broadcast preview to peers
+    if (this.cm.syncManager && (this.currentElement.width > 2 || this.currentElement.height > 2)) {
+      if (!this._broadcastedCreate) {
+        this.cm.syncManager.broadcastCreate(this.currentElement);
+        this._broadcastedCreate = true;
+      } else {
+        this.cm.syncManager.broadcastUpdate(this.currentElement);
+      }
     }
+    
+    this.cm.requestStaticRender();
   }
 
   onPointerUp(pt, e) {
@@ -83,14 +85,33 @@ export class ShapeTool extends Tool {
         this.em.setElement(this.currentElement);
         
         if (this.cm.syncManager) {
-          this.cm.syncManager.broadcastUpdate(this.currentElement);
+          if (!this._broadcastedCreate) {
+            this.cm.syncManager.broadcastCreate(this.currentElement);
+          } else {
+            this.cm.syncManager.broadcastUpdate(this.currentElement);
+          }
+        }
+
+        // Push to history
+        const el = this.currentElement;
+        if (this.cm.historyManager) {
+          this.cm.historyManager.push({
+            description: `Draw ${this.shapeType}`,
+            apply: () => {
+              this.em.setElement(el);
+              this.cm.syncManager?.broadcastCreate(el);
+            },
+            revert: () => {
+              this.em.removeElement(el.id);
+              this.cm.syncManager?.broadcastDelete(el.id);
+            }
+          });
         }
         
         this.em.select(this.currentElement.id);
         this.inputHandler.setActiveTool('select');
       } else {
-        // Was too small, destroy it
-        if (this.cm.syncManager) {
+        if (this._broadcastedCreate && this.cm.syncManager) {
           this.cm.syncManager.broadcastDelete(this.currentElement.id);
         }
       }
@@ -98,6 +119,7 @@ export class ShapeTool extends Tool {
       this.isDrawing = false;
       this.currentElement = null;
       this.startPt = null;
+      this._broadcastedCreate = false;
     }
   }
 

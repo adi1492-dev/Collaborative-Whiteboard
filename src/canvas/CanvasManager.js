@@ -1,34 +1,33 @@
 /**
  * CanvasManager — Core rendering engine.
- * Uses a dual-canvas approach:
- * 1. Static canvas (bottom): For committed elements (drawn infrequently)
- * 2. Active canvas (top): For the element currently being drawn/dragged, selection box, remote cursors (drawn every frame)
+ * Dual-canvas: Static (committed elements) + Active (tool preview, cursors, selections).
+ * Fix: DPI scaling reset on every resize to prevent compounding transform.
  */
 import { Transform } from './Transform.js';
 import { GridRenderer } from './GridRenderer.js';
-// InputHandler and ElementManager will be injected or imported
 
 export class CanvasManager {
   constructor(container, boardId) {
     this.container = container;
     this.boardId = boardId;
     
-    // Core components
     this.transform = new Transform();
     this.gridRenderer = new GridRenderer(this);
-    this.backgroundType = 'grid'; // Default
+    this.backgroundType = 'grid';
     this.isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
 
-    // External dependencies (injected)
+    // External dependencies (injected after construction)
     this.elementManager = null;
     this.inputHandler = null;
     this.syncManager = null;
+    this.textEditor = null;
+    this.historyManager = null;
 
-    // State
     this.width = 0;
     this.height = 0;
     this.needsStaticRender = true;
     this.renderLoopId = null;
+    this._dpr = 1;
 
     this._initCanvases();
     this._bindEvents();
@@ -41,19 +40,12 @@ export class CanvasManager {
     this.container.style.width = '100%';
     this.container.style.height = '100%';
 
-    // Static canvas (Background + committed elements)
     this.staticCanvas = document.createElement('canvas');
-    this.staticCanvas.style.position = 'absolute';
-    this.staticCanvas.style.top = '0';
-    this.staticCanvas.style.left = '0';
+    this.staticCanvas.style.cssText = 'position:absolute;top:0;left:0;';
     this.staticCtx = this.staticCanvas.getContext('2d', { alpha: false });
 
-    // Active canvas (Current tool + cursors)
     this.activeCanvas = document.createElement('canvas');
-    this.activeCanvas.style.position = 'absolute';
-    this.activeCanvas.style.top = '0';
-    this.activeCanvas.style.left = '0';
-    this.activeCanvas.style.pointerEvents = 'none'; // Let events pass to the container overlay if needed, or handle directly
+    this.activeCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
     this.activeCtx = this.activeCanvas.getContext('2d');
 
     this.container.appendChild(this.staticCanvas);
@@ -65,36 +57,32 @@ export class CanvasManager {
   _bindEvents() {
     window.addEventListener('resize', () => this.resize());
     
-    // Listen for theme changes to trigger re-render
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.attributeName === 'data-theme') {
-          this.isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
-          this.requestStaticRender();
-        }
-      });
+    const observer = new MutationObserver(() => {
+      this.isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
+      this.requestStaticRender();
     });
-    observer.observe(document.documentElement, { attributes: true });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
 
   resize() {
     const rect = this.container.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+    this._dpr = dpr;
     
     this.width = rect.width;
     this.height = rect.height;
 
-    // Setup High-DPI support
+    // FIX: Reset context completely before re-scaling to prevent DPI compounding
     [this.staticCanvas, this.activeCanvas].forEach(canvas => {
-      canvas.width = this.width * dpr;
-      canvas.height = this.height * dpr;
+      canvas.width = Math.round(this.width * dpr);
+      canvas.height = Math.round(this.height * dpr);
       canvas.style.width = `${this.width}px`;
       canvas.style.height = `${this.height}px`;
     });
 
-    [this.staticCtx, this.activeCtx].forEach(ctx => {
-      ctx.scale(dpr, dpr);
-    });
+    // Apply DPI scale fresh (getContext returns identity after resizing canvas)
+    this.staticCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.activeCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     this.requestStaticRender();
   }
@@ -117,30 +105,23 @@ export class CanvasManager {
   }
 
   stopRenderLoop() {
-    if (this.renderLoopId) {
-      cancelAnimationFrame(this.renderLoopId);
-    }
+    if (this.renderLoopId) cancelAnimationFrame(this.renderLoopId);
   }
 
   render() {
-    // 1. Render static layer if dirty (or zoomed/panned)
+    // 1. Static layer — only re-render when dirty
     if (this.needsStaticRender) {
-      // Reset transform before clearing so we clear the whole screen
-      this.transform.resetContext(this.staticCtx);
+      // Reset to DPI-scaled identity before drawing
+      this.staticCtx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
       
-      // Clear with background color based on theme
       this.staticCtx.fillStyle = this.isDarkMode ? '#131313' : '#f8f9ff';
       this.staticCtx.fillRect(0, 0, this.width, this.height);
 
-      // Draw grid
       this.gridRenderer.render(this.staticCtx, this.backgroundType, this.width, this.height, this.isDarkMode);
 
-      // Apply transform for elements
       this.transform.applyToContext(this.staticCtx);
 
-      // Draw all committed elements
       if (this.elementManager) {
-        // Optimize: cull elements outside viewport
         const bounds = this.transform.getViewportBounds(this.width, this.height);
         this.elementManager.renderStatic(this.staticCtx, bounds);
       }
@@ -148,30 +129,23 @@ export class CanvasManager {
       this.needsStaticRender = false;
     }
 
-    // 2. Always clear and render active layer
+    // 2. Active layer — always clear and re-render
+    this.activeCtx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
     this.activeCtx.clearRect(0, 0, this.width, this.height);
     this.transform.applyToContext(this.activeCtx);
 
-    // Draw active tool preview (e.g. dragging a box)
-    if (this.inputHandler && this.inputHandler.activeTool) {
+    if (this.inputHandler?.activeTool) {
       this.inputHandler.activeTool.renderActive(this.activeCtx);
     }
 
-    // Draw selection outlines/handles
     if (this.elementManager) {
       this.elementManager.renderSelection(this.activeCtx, this.transform.scale);
     }
 
-    // Draw remote cursors (if sync manager is attached)
     if (this.syncManager) {
       this.syncManager.presenceSync.renderCursors(this.activeCtx, this.transform.scale);
     }
-    
-    // Reset transform on active context to avoid compounding
-    this.transform.resetContext(this.activeCtx);
   }
-
-  // --- Convenience coordinate conversion methods ---
 
   screenToCanvas(screenX, screenY) {
     return this.transform.screenToCanvas(screenX, screenY);
@@ -179,8 +153,28 @@ export class CanvasManager {
 
   getPointerEventCoords(e) {
     const rect = this.container.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-    return this.transform.screenToCanvas(screenX, screenY);
+    return this.transform.screenToCanvas(e.clientX - rect.left, e.clientY - rect.top);
+  }
+
+  /** Zoom to fit all elements in view */
+  zoomToFit() {
+    if (!this.elementManager || this.elementManager.elements.size === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of this.elementManager.elements.values()) {
+      minX = Math.min(minX, el.x);
+      minY = Math.min(minY, el.y);
+      maxX = Math.max(maxX, el.x + el.width);
+      maxY = Math.max(maxY, el.y + el.height);
+    }
+    const padding = 80;
+    const contentW = maxX - minX + padding * 2;
+    const contentH = maxY - minY + padding * 2;
+    const scaleX = this.width / contentW;
+    const scaleY = this.height / contentH;
+    const scale = Math.min(scaleX, scaleY, 1);
+    this.transform.scale = scale;
+    this.transform.panX = (this.width - contentW * scale) / 2 - (minX - padding) * scale;
+    this.transform.panY = (this.height - contentH * scale) / 2 - (minY - padding) * scale;
+    this.requestStaticRender();
   }
 }

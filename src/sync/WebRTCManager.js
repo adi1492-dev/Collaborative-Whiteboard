@@ -1,6 +1,7 @@
 /**
  * WebRTCManager — Handles P2P mesh networking for real-time collaboration.
  * Uses WebRTC DataChannels for ultra-low latency direct browser-to-browser sync.
+ * Each browser tab gets a unique clientId to avoid self-connection issues.
  */
 
 export class WebRTCManager {
@@ -9,11 +10,11 @@ export class WebRTCManager {
     this.ws = wsClient;
     this.localClientId = localClientId;
     
-    // Map of targetUserId -> RTCPeerConnection
+    // Map of targetClientId -> RTCPeerConnection
     this.peers = new Map();
-    // Map of targetUserId -> RTCDataChannel
+    // Map of targetClientId -> RTCDataChannel
     this.dataChannels = new Map();
-    // Map of targetUserId -> Array of ICE Candidates (queue before remote sdp is set)
+    // Map of targetClientId -> Array of ICE Candidates (queue before remote sdp is set)
     this.iceQueues = new Map();
     
     this._bindWebSocketSignals();
@@ -32,15 +33,23 @@ export class WebRTCManager {
 
   async _onPeerJoined(msg) {
     const peerId = msg.clientId;
-    if (peerId === this.localClientId) return;
+
+    // Guard: skip if no valid peer id, or if it's our own connection event
+    if (!peerId || peerId === this.localClientId) return;
+
+    // Guard: skip if we already have a connection to this peer
+    if (this.peers.has(peerId)) {
+      console.log(`[WebRTC] Already connected to ${peerId}, skipping duplicate peer_joined`);
+      return;
+    }
     
-    // The peer who was already in the room initiates the connection
+    // The peer who was ALREADY in the room initiates the offer
     console.log(`[WebRTC] Peer joined: ${peerId}, initiating connection...`);
     const pc = this._createPeerConnection(peerId);
     
     // Create Data Channel
     const dc = pc.createDataChannel('board_sync', {
-      ordered: false, // Unreliable UDP-like delivery for speed
+      ordered: false,    // Unreliable UDP-like delivery for speed
       maxRetransmits: 0
     });
     this._setupDataChannel(peerId, dc);
@@ -61,17 +70,18 @@ export class WebRTCManager {
 
   _onPeerLeft(msg) {
     const peerId = msg.clientId;
+    if (!peerId) return;
     console.log(`[WebRTC] Peer left: ${peerId}, cleaning up...`);
     this._cleanupPeer(peerId);
   }
 
   _cleanupPeer(peerId) {
     if (this.dataChannels.has(peerId)) {
-      this.dataChannels.get(peerId).close();
+      try { this.dataChannels.get(peerId).close(); } catch (_) {}
       this.dataChannels.delete(peerId);
     }
     if (this.peers.has(peerId)) {
-      this.peers.get(peerId).close();
+      try { this.peers.get(peerId).close(); } catch (_) {}
       this.peers.delete(peerId);
     }
     this.iceQueues.delete(peerId);
@@ -112,7 +122,13 @@ export class WebRTCManager {
   }
 
   _setupDataChannel(peerId, dc) {
-    dc.onopen = () => console.log(`[WebRTC] DataChannel OPEN with ${peerId}`);
+    dc.onopen = () => {
+      console.log(`[WebRTC] DataChannel OPEN with ${peerId}`);
+      // When a data channel opens, push current board state if we are the host
+      if (this.sync && this.sync.isHost) {
+        this._pushStateToNewPeer(dc);
+      }
+    };
     dc.onclose = () => console.log(`[WebRTC] DataChannel CLOSED with ${peerId}`);
     dc.onerror = (err) => console.error(`[WebRTC] DataChannel ERROR with ${peerId}:`, err);
     
@@ -128,10 +144,27 @@ export class WebRTCManager {
     this.dataChannels.set(peerId, dc);
   }
 
+  /**
+   * Push all current in-memory elements to a newly connected peer.
+   * This bridges the gap between DB load and real-time changes.
+   */
+  _pushStateToNewPeer(dc) {
+    if (!this.sync || !this.sync.em) return;
+    try {
+      for (const el of this.sync.em.elements.values()) {
+        const msg = JSON.stringify({ type: 'element_create', payload: el.toJSON() });
+        if (dc.readyState === 'open') dc.send(msg);
+      }
+      console.log(`[WebRTC] Pushed ${this.sync.em.elements.size} elements to new peer`);
+    } catch (err) {
+      console.error('[WebRTC] Failed to push state to new peer:', err);
+    }
+  }
+
   async _onOffer(msg) {
     const payload = msg.payload;
     const peerId = msg.clientId;
-    if (peerId === this.localClientId) return;
+    if (!peerId || peerId === this.localClientId) return;
     
     console.log(`[WebRTC] Received offer from ${peerId}`);
     
@@ -210,9 +243,9 @@ export class WebRTCManager {
   // --- Data Channel Messaging (P2P) ---
 
   _handleDataChannelMessage(peerId, msg) {
-    // Inject peer info so SyncManager knows where it came from
+    // Inject peer info so handlers know the source
     msg.clientId = peerId;
-    // We should also set userId back to whatever we had if needed, but peerId works well
+    msg.userId = peerId; // keep userId alias for PresenceSync compatibility
     
     switch (msg.type) {
       case 'element_create':
@@ -225,7 +258,9 @@ export class WebRTCManager {
         this.sync._onRemoteDelete(msg);
         break;
       case 'cursor_move':
-        msg.userName = msg.payload.userName;
+        // Include userName from payload for cursor display
+        msg.userName = msg.payload?.userName;
+        msg.userId = peerId; // PresenceSync uses userId as the map key
         this.sync.presenceSync._onRemoteCursor(msg);
         break;
     }
@@ -235,19 +270,31 @@ export class WebRTCManager {
   broadcast(type, payload) {
     const msgString = JSON.stringify({ type, payload });
     
+    let sent = 0;
     for (const [peerId, dc] of this.dataChannels.entries()) {
       if (dc.readyState === 'open') {
         try {
           dc.send(msgString);
+          sent++;
         } catch (err) {
           console.error(`[WebRTC] Failed to send to ${peerId}:`, err);
         }
       }
     }
+    return sent;
+  }
+
+  /** Returns count of active open P2P connections */
+  get connectedPeerCount() {
+    let count = 0;
+    for (const dc of this.dataChannels.values()) {
+      if (dc.readyState === 'open') count++;
+    }
+    return count;
   }
 
   destroy() {
-    for (const peerId of this.peers.keys()) {
+    for (const peerId of [...this.peers.keys()]) {
       this._cleanupPeer(peerId);
     }
   }
