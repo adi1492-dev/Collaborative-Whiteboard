@@ -20,10 +20,12 @@ type Board struct {
 	OwnerID         primitive.ObjectID `bson:"ownerId" json:"ownerId"`
 	Collaborators   []Collaborator     `bson:"collaborators" json:"collaborators"`
 	ShareLink       string             `bson:"shareLink" json:"shareLink"`
-	SharePermission string             `bson:"sharePermission" json:"sharePermission"` // "edit", "view", "none"
-	Background      string             `bson:"background" json:"background"`           // "grid", "dots", "lines", "blank"
-	CreatedAt       time.Time          `bson:"createdAt" json:"createdAt"`
-	UpdatedAt       time.Time          `bson:"updatedAt" json:"updatedAt"`
+	SharePermission  string             `bson:"sharePermission" json:"sharePermission"` // "edit", "view", "none"
+	RoomKey          string             `bson:"roomKey" json:"roomKey"`
+	RoomKeyExpiresAt time.Time          `bson:"roomKeyExpiresAt" json:"roomKeyExpiresAt"`
+	Background       string             `bson:"background" json:"background"`           // "grid", "dots", "lines", "blank"
+	CreatedAt        time.Time          `bson:"createdAt" json:"createdAt"`
+	UpdatedAt        time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
 
 // BoardResponse is the public-facing board data.

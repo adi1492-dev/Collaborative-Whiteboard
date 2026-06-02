@@ -59,6 +59,12 @@ export class BoardPage {
               <h1 class="headline-sm truncate" id="board-title" style="font-size: 16px;">Loading...</h1>
               <div id="latency-indicator" class="status-dot status-yellow" title="Connecting..."></div>
             </div>
+            <!-- Room Key display for owner -->
+            <div id="room-key-display" style="display: none; align-items: center; background: rgba(192, 193, 255, 0.1); padding: 4px 12px; border-radius: 16px; margin-left: 16px; border: 1px solid rgba(192, 193, 255, 0.2);">
+              <span class="material-symbols-outlined" style="font-size: 14px; color: var(--primary); margin-right: 6px;">key</span>
+              <span class="label-sm" style="color: var(--primary); font-family: monospace; letter-spacing: 1px;" id="room-key-text">------</span>
+              <span class="label-sm" style="color: var(--on-surface-variant); margin-left: 8px;" id="room-key-timer">(60s)</span>
+            </div>
           </div>
           <div class="header-right">
             <!-- Presence avatars will go here -->
@@ -102,6 +108,7 @@ export class BoardPage {
       this.root.querySelector('#board-title').textContent = this.boardData.title;
       
       this._initEngine(data.elements || []);
+      this._initRoomKey();
     } catch (err) {
       alert("Failed to load board: " + err.message);
       this.app.navigate('/dashboard');
@@ -292,6 +299,51 @@ export class BoardPage {
     window.removeEventListener('beforeunload', this.handleBeforeUnload);
     if (this.cm) this.cm.stopRenderLoop();
     if (this.sync) this.sync.destroy();
+    if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
+    if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
+  }
+
+  async _initRoomKey() {
+    const user = this.app.auth.getUser();
+    // Check if current user is the owner (handling both _id and id depending on auth structure)
+    const userId = user._id || user.id;
+    
+    if (this.boardData.ownerId === userId) {
+      const display = this.root.querySelector('#room-key-display');
+      const text = this.root.querySelector('#room-key-text');
+      const timerLabel = this.root.querySelector('#room-key-timer');
+      
+      if (display) display.style.display = 'flex';
+      
+      let secondsLeft = 0;
+      
+      const refreshKey = async () => {
+        try {
+          const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/key/refresh`, { method: 'POST' });
+          if (res.ok) {
+            const data = await res.json();
+            if (text) text.textContent = data.roomKey;
+            secondsLeft = 60;
+          }
+        } catch (err) {
+          console.error("Failed to refresh room key", err);
+        }
+      };
+
+      // Initial fetch
+      await refreshKey();
+      
+      // Update timer every second
+      this.keyTimerInterval = setInterval(() => {
+        if (secondsLeft > 0) {
+          secondsLeft--;
+          if (timerLabel) timerLabel.textContent = `(${secondsLeft}s)`;
+        }
+      }, 1000);
+      
+      // Fetch new key every 60 seconds
+      this.keyRefreshInterval = setInterval(refreshKey, 60000);
+    }
   }
 
   _injectStyles() {

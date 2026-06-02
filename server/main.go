@@ -97,11 +97,12 @@ func main() {
 	{
 		boardGroup.POST("", handlers.CreateBoard)
 		boardGroup.GET("", handlers.ListBoards)
+		boardGroup.POST("/join", handlers.JoinBoard)
 		boardGroup.GET("/:id", handlers.GetBoard)
 		boardGroup.PUT("/:id", handlers.UpdateBoard)
 		boardGroup.DELETE("/:id", handlers.DeleteBoard)
 		boardGroup.POST("/:id/share", handlers.UpdateShareLink)
-		boardGroup.POST("/:id/join", handlers.JoinBoard)
+		boardGroup.POST("/:id/key/refresh", handlers.RefreshRoomKey)
 		boardGroup.POST("/:id/sync", handlers.SyncBoardElements)
 		boardGroup.POST("/:id/ai/summarize", handlers.SummarizeBoard)
 	}

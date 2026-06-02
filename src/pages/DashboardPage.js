@@ -145,9 +145,9 @@ export class DashboardPage {
             
             <form id="join-room-form">
               <div class="form-group">
-                <label for="room-key" class="form-label">Room Key or Link</label>
-                <input type="text" id="room-key" class="input" placeholder="Paste the room key or full URL here..." required autofocus />
-                <p class="label-sm" style="color: var(--on-surface-variant); margin-top: 8px;">Example: http://localhost:5173/#/board/xxxx or just the key 'xxxx'</p>
+                <label for="room-key" class="form-label">Room Key</label>
+                <input type="text" id="room-key" class="input" placeholder="Enter the 6-character Room Key..." required autofocus maxlength="6" style="text-transform: uppercase; letter-spacing: 2px; font-family: monospace; font-size: 18px; text-align: center;" />
+                <p class="label-sm" style="color: var(--on-surface-variant); margin-top: 8px; text-align: center;">Ask the room creator for the current 6-character key.</p>
               </div>
 
               <div class="modal-actions">
@@ -365,27 +365,21 @@ export class DashboardPage {
     this.root.querySelector('#join-room-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      let keyOrUrl = this.root.querySelector('#room-key').value.trim();
-      if (!keyOrUrl) return;
-
-      // Extract the board ID if it's a URL
-      let boardId = keyOrUrl;
-      try {
-        if (keyOrUrl.includes('http') || keyOrUrl.includes('localhost')) {
-          const urlParts = keyOrUrl.split('/board/');
-          if (urlParts.length > 1) {
-            boardId = urlParts[1].split(/[?#]/)[0]; // Remove query params or hashes just in case
-          }
-        }
-      } catch (err) {}
+      let key = this.root.querySelector('#room-key').value.trim().toUpperCase();
+      if (!key || key.length !== 6) {
+        alert('Please enter a valid 6-character room key.');
+        return;
+      }
 
       const submitBtn = this.root.querySelector('#submit-join-btn');
       submitBtn.classList.add('btn-loading');
       submitBtn.disabled = true;
 
       try {
-        const res = await this.app.auth.apiFetch(`/api/boards/${boardId}/join`, {
+        const res = await this.app.auth.apiFetch(`/api/rooms/join`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key })
         });
 
         if (res.ok) {
@@ -394,7 +388,8 @@ export class DashboardPage {
           // Navigate to the joined room
           this.app.navigate(`/board/${data.boardId}`);
         } else {
-          alert('Failed to join room. Please check if the room key is correct.');
+          const err = await res.json();
+          alert(err.error || 'Failed to join room. The key might be invalid or expired.');
         }
       } catch (err) {
         alert('Network error while trying to join the room.');

@@ -13,6 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"crypto/rand"
+	"math/big"
 )
 
 // CreateBoardRequest is the expected body for creating a new board.
@@ -112,6 +114,33 @@ func GetBoard(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Board not found"})
 		return
+	}
+
+	userID := auth.GetUserID(c)
+	userObjID, _ := primitive.ObjectIDFromHex(userID)
+
+	// Security: Only owner or collaborators can fetch the board!
+	isAuthorized := false
+	if board.OwnerID == userObjID {
+		isAuthorized = true
+	} else {
+		for _, col := range board.Collaborators {
+			if col.UserID == userObjID {
+				isAuthorized = true
+				break
+			}
+		}
+	}
+
+	if !isAuthorized {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied. You must join the room using a valid Room Key first."})
+		return
+	}
+
+	// Security: Hide RoomKey from non-owners
+	if board.OwnerID != userObjID {
+		board.RoomKey = ""
+		board.RoomKeyExpiresAt = time.Time{}
 	}
 
 	// Fetch elements for this board
@@ -288,20 +317,31 @@ func SyncBoardElements(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Synced", "count": len(req.Elements)})
 }
 
-// JoinBoard handles POST /api/boards/:id/join
+// JoinBoard handles POST /api/rooms/join (replaces old endpoint)
 func JoinBoard(c *gin.Context) {
-	boardID := c.Param("id")
+	var req struct {
+		Key string `json:"key" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Room key is required"})
+		return
+	}
+
 	userID := auth.GetUserID(c)
 	userObjID, _ := primitive.ObjectIDFromHex(userID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Check if board exists
+	// Find the board with this exact active key
 	var board models.Board
-	err := database.Boards().FindOne(ctx, bson.M{"boardId": boardID}).Decode(&board)
+	err := database.Boards().FindOne(ctx, bson.M{
+		"roomKey": req.Key,
+		"roomKeyExpiresAt": bson.M{"$gt": time.Now()},
+	}).Decode(&board)
+
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Board not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Invalid or expired Room Key"})
 		return
 	}
 
@@ -325,7 +365,7 @@ func JoinBoard(c *gin.Context) {
 		return
 	}
 
-	// Add to collaborators with edit permission by default
+	// Add to collaborators with edit permission
 	newCollaborator := models.Collaborator{
 		UserID:     userObjID,
 		Permission: "edit",
@@ -333,7 +373,7 @@ func JoinBoard(c *gin.Context) {
 
 	_, err = database.Boards().UpdateOne(
 		ctx,
-		bson.M{"boardId": boardID},
+		bson.M{"_id": board.ID},
 		bson.M{
 			"$push": bson.M{"collaborators": newCollaborator},
 			"$set":  bson.M{"updatedAt": time.Now()},
@@ -346,4 +386,44 @@ func JoinBoard(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Successfully joined room", "boardId": board.BoardID})
+}
+
+func generateSecureKey(length int) string {
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		b[i] = charset[n.Int64()]
+	}
+	return string(b)
+}
+
+// RefreshRoomKey handles POST /api/boards/:id/key/refresh
+func RefreshRoomKey(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+	ownerObjID, _ := primitive.ObjectIDFromHex(userID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Generate 6 character key
+	newKey := generateSecureKey(6)
+	expiresAt := time.Now().Add(60 * time.Second)
+
+	result, err := database.Boards().UpdateOne(ctx,
+		bson.M{"boardId": boardID, "ownerId": ownerObjID}, // Only owner can refresh
+		bson.M{"$set": bson.M{
+			"roomKey":          newKey,
+			"roomKeyExpiresAt": expiresAt,
+			"updatedAt":        time.Now(),
+		}},
+	)
+
+	if err != nil || result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Board not found or not authorized"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"roomKey": newKey, "expiresAt": expiresAt})
 }
