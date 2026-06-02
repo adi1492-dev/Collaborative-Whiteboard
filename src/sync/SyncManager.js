@@ -23,6 +23,10 @@ export class SyncManager {
     // Lamport logical clock for LWW
     this.localClock = Date.now(); 
 
+    // Auto-Save Queue
+    this.dirtyElements = new Map();
+    this.autoSaveInterval = setInterval(() => this._processAutoSave(), 1000);
+
     // Setup WebSocket
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsHost = process.env.NODE_ENV === 'production' ? window.location.host : 'localhost:3001';
@@ -72,12 +76,16 @@ export class SyncManager {
 
   broadcastCreate(element) {
     element.updatedAt = this._tickClock();
-    this.ws.send('element_create', element.toJSON());
+    const json = element.toJSON();
+    this.ws.send('element_create', json);
+    this.dirtyElements.set(element.id, json);
   }
 
   broadcastUpdate(element) {
     element.updatedAt = this._tickClock();
-    this.ws.send('element_update', element.toJSON());
+    const json = element.toJSON();
+    this.ws.send('element_update', json);
+    this.dirtyElements.set(element.id, json);
   }
 
   broadcastDelete(elementId) {
@@ -85,6 +93,50 @@ export class SyncManager {
       elementId,
       updatedAt: this._tickClock() 
     });
+    this.dirtyElements.delete(elementId);
+  }
+
+  // --- Bulk Save (HTTP) ---
+
+  async forceSave() {
+    if (this.dirtyElements.size === 0) return true;
+    
+    const elementsToSave = Array.from(this.dirtyElements.values());
+    this.dirtyElements.clear(); // Clear immediately so new edits can be queued
+
+    try {
+      const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ elements: elementsToSave }),
+        keepalive: true
+      });
+      
+      if (!res.ok) {
+        console.error('Auto-save failed, re-queueing elements');
+        elementsToSave.forEach(el => {
+          if (!this.dirtyElements.has(el.id)) {
+            this.dirtyElements.set(el.id, el);
+          }
+        });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('Auto-save error:', err);
+      elementsToSave.forEach(el => {
+        if (!this.dirtyElements.has(el.id)) {
+          this.dirtyElements.set(el.id, el);
+        }
+      });
+      return false;
+    }
+  }
+
+  _processAutoSave() {
+    if (this.dirtyElements.size > 0) {
+      this.forceSave();
+    }
   }
 
   // --- Incoming (Remote -> Local) ---
@@ -114,7 +166,6 @@ export class SyncManager {
     }
 
     // Property-level Last-Writer-Wins (LWW) conflict resolution
-    // If remote timestamp is newer, accept remote state
     if (remoteEl.updatedAt > localEl.updatedAt) {
       // Merge properties
       localEl.x = remoteEl.x;
@@ -127,7 +178,6 @@ export class SyncManager {
       
       // Type-specific properties
       if (remoteEl.type === 'sticky' || remoteEl.type === 'text') {
-        // Will be managed by CRDT in Phase 4, but for now use LWW
         localEl.text = remoteEl.text;
       } else if (remoteEl.type === 'freehand') {
         localEl.points = remoteEl.points;
@@ -140,15 +190,10 @@ export class SyncManager {
 
   _onRemoteDelete(msg) {
     this._tickClock(msg.payload.updatedAt);
-    
-    // In a full implementation, we'd check timestamps, but deletion 
-    // usually wins to prevent ghost elements
     this.em.removeElement(msg.payload.elementId);
   }
 
   _hydrateElement(data) {
-    // Dynamic import avoidance for simpler bundling, 
-    // we use a factory pattern based on type
     switch (data.type) {
       case 'freehand':
         return new FreehandElement(data);
@@ -159,12 +204,15 @@ export class SyncManager {
       case 'text':
         return new TextElement(data);
       default:
-        // Fallback to base element (renders nothing, but holds state)
         return new Element(data);
     }
   }
 
   destroy() {
+    clearInterval(this.autoSaveInterval);
+    if (this.dirtyElements.size > 0) {
+      this.forceSave(); // Fire and forget with keepalive:true
+    }
     this.ws.disconnect();
   }
 }

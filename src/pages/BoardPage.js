@@ -74,6 +74,9 @@ export class BoardPage {
             <button class="btn btn-outline" style="padding: 6px 12px; height: auto;" id="share-btn">
               <span class="material-symbols-outlined" style="font-size:16px;">share</span> Share
             </button>
+            <button class="btn btn-primary" style="padding: 6px 12px; height: auto; background: var(--primary); color: var(--on-primary); border: none; border-radius: var(--radius);" id="manual-save-btn">
+              <span class="material-symbols-outlined" style="font-size:16px;">save</span> <span id="save-btn-text">Save</span>
+            </button>
           </div>
         </header>
 
@@ -224,9 +227,41 @@ export class BoardPage {
       const rect = canvasContainer.getBoundingClientRect();
       this.cm.transform.panTo(rect.width/2 - firstEl.x, rect.height/2 - firstEl.y);
     }
+
+    // Bind Manual Save button
+    const saveBtn = this.root.querySelector('#manual-save-btn');
+    const saveBtnText = this.root.querySelector('#save-btn-text');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        saveBtnText.textContent = 'Saving...';
+        
+        // Force a full save of all elements on manual save
+        for (const el of this.em.elements.values()) {
+          this.sync.dirtyElements.set(el.id, el.toJSON());
+        }
+        
+        const success = await this.sync.forceSave();
+        
+        saveBtnText.textContent = success ? 'Saved!' : 'Failed';
+        setTimeout(() => {
+          saveBtn.disabled = false;
+          saveBtnText.textContent = 'Save';
+        }, 2000);
+      });
+    }
+
+    // Bind beforeunload
+    this.handleBeforeUnload = (e) => {
+      if (this.sync && this.sync.dirtyElements.size > 0) {
+        this.sync.forceSave();
+      }
+    };
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
 
   destroy() {
+    window.removeEventListener('beforeunload', this.handleBeforeUnload);
     if (this.cm) this.cm.stopRenderLoop();
     if (this.sync) this.sync.destroy();
   }
