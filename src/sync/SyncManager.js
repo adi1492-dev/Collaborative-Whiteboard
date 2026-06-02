@@ -36,7 +36,7 @@ export class SyncManager {
     this.ws = new WebSocketClient(url, () => this.app.auth.getAccessToken());
     
     // P2P Manager
-    this.p2p = new WebRTCManager(this, this.ws, this.userId);
+    this.p2p = new WebRTCManager(this, this.ws, this.ws.clientId);
     
     // Setup Presence
     this.presenceSync = new PresenceSync(this.ws, this.cm, this.p2p);

@@ -14,6 +14,7 @@ export class WebSocketClient {
     this.isConnected = false;
     this.isConnecting = false;
     this.intentionallyClosed = false;
+    this.clientId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   }
 
   connect() {
@@ -24,7 +25,7 @@ export class WebSocketClient {
     
     try {
       const token = typeof this.tokenGetter === 'function' ? this.tokenGetter() : this.tokenGetter;
-      const url = `${this.baseUrl}?token=${encodeURIComponent(token)}`;
+      const url = `${this.baseUrl}?token=${encodeURIComponent(token)}&clientId=${this.clientId}`;
       this.ws = new WebSocket(url);
       
       this.ws.onopen = this._onOpen.bind(this);

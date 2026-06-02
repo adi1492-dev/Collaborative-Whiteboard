@@ -4,10 +4,10 @@
  */
 
 export class WebRTCManager {
-  constructor(syncManager, wsClient, localUserId) {
+  constructor(syncManager, wsClient, localClientId) {
     this.sync = syncManager;
     this.ws = wsClient;
-    this.localUserId = localUserId;
+    this.localClientId = localClientId;
     
     // Map of targetUserId -> RTCPeerConnection
     this.peers = new Map();
@@ -31,8 +31,8 @@ export class WebRTCManager {
   // --- Peer Lifecycle ---
 
   async _onPeerJoined(msg) {
-    const peerId = msg.userId;
-    if (peerId === this.localUserId) return;
+    const peerId = msg.clientId;
+    if (peerId === this.localClientId) return;
     
     // The peer who was already in the room initiates the connection
     console.log(`[WebRTC] Peer joined: ${peerId}, initiating connection...`);
@@ -51,7 +51,7 @@ export class WebRTCManager {
       await pc.setLocalDescription(offer);
       
       this.ws.send('webrtc_offer', {
-        targetUserId: peerId,
+        targetClientId: peerId,
         sdp: offer
       });
     } catch (err) {
@@ -60,7 +60,7 @@ export class WebRTCManager {
   }
 
   _onPeerLeft(msg) {
-    const peerId = msg.userId;
+    const peerId = msg.clientId;
     console.log(`[WebRTC] Peer left: ${peerId}, cleaning up...`);
     this._cleanupPeer(peerId);
   }
@@ -90,7 +90,7 @@ export class WebRTCManager {
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         this.ws.send('webrtc_ice', {
-          targetUserId: peerId,
+          targetClientId: peerId,
           candidate: event.candidate
         });
       }
@@ -130,8 +130,8 @@ export class WebRTCManager {
 
   async _onOffer(msg) {
     const payload = msg.payload;
-    const peerId = msg.userId;
-    if (peerId === this.localUserId) return;
+    const peerId = msg.clientId;
+    if (peerId === this.localClientId) return;
     
     console.log(`[WebRTC] Received offer from ${peerId}`);
     
@@ -148,7 +148,7 @@ export class WebRTCManager {
       await pc.setLocalDescription(answer);
       
       this.ws.send('webrtc_answer', {
-        targetUserId: peerId,
+        targetClientId: peerId,
         sdp: answer
       });
     } catch (err) {
@@ -158,7 +158,7 @@ export class WebRTCManager {
 
   async _onAnswer(msg) {
     const payload = msg.payload;
-    const peerId = msg.userId;
+    const peerId = msg.clientId;
     const pc = this.peers.get(peerId);
     
     if (pc) {
@@ -174,7 +174,7 @@ export class WebRTCManager {
 
   async _onIceCandidate(msg) {
     const payload = msg.payload;
-    const peerId = msg.userId;
+    const peerId = msg.clientId;
     const pc = this.peers.get(peerId);
     
     if (pc && pc.remoteDescription && pc.remoteDescription.type) {
@@ -211,7 +211,8 @@ export class WebRTCManager {
 
   _handleDataChannelMessage(peerId, msg) {
     // Inject peer info so SyncManager knows where it came from
-    msg.userId = peerId;
+    msg.clientId = peerId;
+    // We should also set userId back to whatever we had if needed, but peerId works well
     
     switch (msg.type) {
       case 'element_create':

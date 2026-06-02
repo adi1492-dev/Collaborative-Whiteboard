@@ -44,6 +44,7 @@ type Client struct {
 	Room        *Room
 	Send        chan []byte
 	UserID      string
+	ClientID    string
 	UserName    string
 	AvatarColor string
 	BoardID     string
@@ -76,11 +77,18 @@ func HandleWebSocket(hub *Hub) gin.HandlerFunc {
 			return
 		}
 
+		// Extract or generate ClientID
+		clientID := c.Query("clientId")
+		if clientID == "" {
+			clientID = "client-" + time.Now().Format("20060102150405.000") // simple fallback
+		}
+
 		client := &Client{
 			conn:        conn,
 			hub:         hub,
 			Send:        make(chan []byte, sendBufferSize),
 			UserID:      claims.Subject,
+			ClientID:    clientID,
 			UserName:    claims.Name,
 			AvatarColor: "#c0c1ff", // Default, will be fetched from DB in production
 			BoardID:     boardID,
@@ -125,6 +133,7 @@ func (c *Client) readPump() {
 
 		// Attach sender info
 		msg.UserID = c.UserID
+		msg.ClientID = c.ClientID
 		msg.UserName = c.UserName
 		msg.Timestamp = time.Now().UnixMilli()
 
@@ -250,9 +259,9 @@ func (c *Client) handleRTCSignaling(msg Message) {
 		return
 	}
 
-	// Extract target user ID from payload
+	// Extract target client ID from payload
 	var payload struct {
-		TargetUserID string `json:"targetUserId"`
+		TargetClientID string `json:"targetClientId"`
 	}
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 		return
@@ -263,7 +272,7 @@ func (c *Client) handleRTCSignaling(msg Message) {
 	defer c.Room.mu.RUnlock()
 
 	for client := range c.Room.clients {
-		if client.UserID == payload.TargetUserID {
+		if client.ClientID == payload.TargetClientID {
 			data, _ := json.Marshal(msg)
 			select {
 			case client.Send <- data:

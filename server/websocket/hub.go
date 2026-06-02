@@ -12,6 +12,7 @@ type Message struct {
 	Type      string          `json:"type"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
 	UserID    string          `json:"userId,omitempty"`
+	ClientID  string          `json:"clientId,omitempty"`
 	UserName  string          `json:"userName,omitempty"`
 	Timestamp int64           `json:"timestamp,omitempty"`
 }
@@ -65,6 +66,7 @@ func (h *Hub) addClient(client *Client) {
 	joinMsg := Message{
 		Type:      "peer_joined",
 		UserID:    client.UserID,
+		ClientID:  client.ClientID,
 		UserName:  client.UserName,
 		Timestamp: time.Now().UnixMilli(),
 	}
@@ -84,6 +86,7 @@ func (h *Hub) removeClient(client *Client) {
 		leaveMsg := Message{
 			Type:      "peer_left",
 			UserID:    client.UserID,
+			ClientID:  client.ClientID,
 			Timestamp: time.Now().UnixMilli(),
 		}
 		room.BroadcastAll(leaveMsg)
