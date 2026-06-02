@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+	"time"
 )
 
 // Message represents a WebSocket message exchanged between clients and server.
@@ -59,6 +60,15 @@ func (h *Hub) addClient(client *Client) {
 	room.AddClient(client)
 	client.Room = room
 	log.Printf("👤 User %s joined room %s (%d users)", client.UserName, client.BoardID, room.ClientCount())
+	
+	// Broadcast peer_joined to ALL clients in the room (so everyone gets updated presence)
+	joinMsg := Message{
+		Type:      "peer_joined",
+		UserID:    client.UserID,
+		UserName:  client.UserName,
+		Timestamp: time.Now().UnixMilli(),
+	}
+	room.BroadcastAll(joinMsg)
 }
 
 func (h *Hub) removeClient(client *Client) {
@@ -66,11 +76,20 @@ func (h *Hub) removeClient(client *Client) {
 	defer h.mu.Unlock()
 
 	if client.Room != nil {
-		client.Room.RemoveClient(client)
-		log.Printf("👋 User %s left room %s (%d users)", client.UserName, client.BoardID, client.Room.ClientCount())
+		room := client.Room
+		room.RemoveClient(client)
+		log.Printf("👋 User %s left room %s (%d users)", client.UserName, client.BoardID, room.ClientCount())
+
+		// Broadcast peer_left
+		leaveMsg := Message{
+			Type:      "peer_left",
+			UserID:    client.UserID,
+			Timestamp: time.Now().UnixMilli(),
+		}
+		room.BroadcastAll(leaveMsg)
 
 		// Clean up empty rooms
-		if client.Room.ClientCount() == 0 {
+		if room.ClientCount() == 0 {
 			delete(h.rooms, client.BoardID)
 			log.Printf("🏚️  Room destroyed: %s", client.BoardID)
 		}

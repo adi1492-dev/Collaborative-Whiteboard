@@ -10,6 +10,7 @@ import { ShapeElement } from '../elements/ShapeElement.js';
 import { StickyNote } from '../elements/StickyNote.js';
 import { TextElement } from '../elements/TextElement.js';
 import { Element } from '../elements/Element.js';
+import { WebRTCManager } from './WebRTCManager.js';
 // CRDTSync will be imported in Phase 4
 
 export class SyncManager {
@@ -33,8 +34,14 @@ export class SyncManager {
     
     this.ws = new WebSocketClient(url, () => this.app.auth.getAccessToken());
     
+    // P2P Manager
+    this.p2p = new WebRTCManager(this, this.ws, this.userId);
+    
     // Setup Presence
-    this.presenceSync = new PresenceSync(this.ws, this.cm);
+    this.presenceSync = new PresenceSync(this.ws, this.cm, this.p2p);
+
+    // Host status for saving
+    this.isHost = false;
 
     this._bindEvents();
     this.ws.connect();
@@ -65,18 +72,31 @@ export class SyncManager {
       }
     });
 
-    // Element Operations
+    // Handle host assignment
+    this.ws.on('host_assigned', () => {
+      this.isHost = true;
+      this._updateHostUI();
+    });
+
+    // Also check initial user list for host status
+    this.ws.on('peer_joined', () => {
+      // If we are the only one in the room (before others join), we should be host.
+      // But server assigns it, so we'll wait for user_list or assume it from the server.
+    });
+
+    // Element Operations (fallback or initial sync from server)
+    // Most realtime drawing will now come from P2P WebRTC data channels
     this.ws.on('element_create', this._onRemoteCreate.bind(this));
     this.ws.on('element_update', this._onRemoteUpdate.bind(this));
     this.ws.on('element_delete', this._onRemoteDelete.bind(this));
   }
 
-  // --- Outgoing (Local -> Remote) ---
+  // --- Outgoing (Local -> Remote P2P) ---
 
   broadcastCreate(element) {
     element.updatedAt = this._tickClock();
     const json = element.toJSON();
-    this.ws.send('element_create', json);
+    this.p2p.broadcast('element_create', json); // P2P
     this.dirtyElements.set(element.id, json);
     this._scheduleAutoSave();
   }
@@ -84,13 +104,13 @@ export class SyncManager {
   broadcastUpdate(element) {
     element.updatedAt = this._tickClock();
     const json = element.toJSON();
-    this.ws.send('element_update', json);
+    this.p2p.broadcast('element_update', json); // P2P
     this.dirtyElements.set(element.id, json);
     this._scheduleAutoSave();
   }
 
   broadcastDelete(elementId) {
-    this.ws.send('element_delete', { 
+    this.p2p.broadcast('element_delete', { // P2P
       elementId,
       updatedAt: this._tickClock() 
     });
@@ -99,6 +119,9 @@ export class SyncManager {
   }
 
   _scheduleAutoSave() {
+    // Only the Host is allowed to auto-save to the backend!
+    if (!this.isHost) return;
+
     if (this.autoSaveTimer) {
       clearTimeout(this.autoSaveTimer);
     }
@@ -109,9 +132,29 @@ export class SyncManager {
     }, 500); // 500ms debounce
   }
 
+  _updateHostUI() {
+    const titleGroup = document.querySelector('.board-title-group');
+    let hostBadge = document.getElementById('host-badge');
+    if (this.isHost) {
+      if (!hostBadge && titleGroup) {
+        hostBadge = document.createElement('div');
+        hostBadge.id = 'host-badge';
+        hostBadge.className = 'badge';
+        hostBadge.style.cssText = 'background: rgba(234, 179, 8, 0.2); color: #eab308; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;';
+        hostBadge.innerHTML = '👑 HOST';
+        titleGroup.appendChild(hostBadge);
+      }
+    } else if (hostBadge) {
+      hostBadge.remove();
+    }
+  }
+
   // --- Bulk Save (HTTP) ---
 
   async forceSave() {
+    // Prevent non-hosts from saving to DB to save costs and avoid conflicts
+    if (!this.isHost) return true;
+
     if (this.dirtyElements.size === 0) return true;
     
     const elementsToSave = Array.from(this.dirtyElements.values());
@@ -217,9 +260,10 @@ export class SyncManager {
 
   destroy() {
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
-    if (this.dirtyElements.size > 0) {
+    if (this.isHost && this.dirtyElements.size > 0) {
       this.forceSave(); // Fire and forget with keepalive:true
     }
+    if (this.p2p) this.p2p.destroy();
     this.ws.disconnect();
   }
 }

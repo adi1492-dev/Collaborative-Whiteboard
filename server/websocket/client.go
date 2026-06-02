@@ -47,6 +47,7 @@ type Client struct {
 	UserName    string
 	AvatarColor string
 	BoardID     string
+	IsHost      bool
 }
 
 // HandleWebSocket upgrades an HTTP connection to WebSocket.
@@ -206,6 +207,10 @@ func (c *Client) handleMessage(msg Message) {
 			c.Room.Broadcast(msg, c)
 		}
 
+	case "webrtc_offer", "webrtc_answer", "webrtc_ice":
+		// WebRTC data channel signaling (replaces rtc_offer)
+		c.handleRTCSignaling(msg)
+
 	case "cursor_move":
 		// Broadcast cursor position to all other clients
 		if c.Room != nil {
@@ -222,10 +227,6 @@ func (c *Client) handleMessage(msg Message) {
 		if c.Room != nil {
 			c.Room.Broadcast(msg, c)
 		}
-
-	case "rtc_offer", "rtc_answer", "rtc_ice":
-		// WebRTC signaling — forward to target user
-		c.handleRTCSignaling(msg)
 
 	case "rtc_mute_state":
 		// Broadcast mute state to all

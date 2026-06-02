@@ -3,9 +3,10 @@
  * Cursors are rendered on the active canvas layer for 60fps smoothness.
  */
 export class PresenceSync {
-  constructor(ws, canvasManager) {
+  constructor(ws, canvasManager, p2pManager) {
     this.ws = ws;
     this.cm = canvasManager;
+    this.p2p = p2pManager;
     this.cursors = new Map(); // userId -> { x, y, userName, color, targetX, targetY }
     
     this.lastSendTime = 0;
@@ -13,6 +14,7 @@ export class PresenceSync {
     this.localX = 0;
     this.localY = 0;
 
+    // Listen for fallback WS cursor events just in case
     this.ws.on('cursor_move', this._onRemoteCursor.bind(this));
   }
 
@@ -22,7 +24,11 @@ export class PresenceSync {
     
     const now = Date.now();
     if (now - this.lastSendTime > this.sendThrottle) {
-      this.ws.send('cursor_move', { x: worldX, y: worldY });
+      if (this.p2p) {
+        this.p2p.broadcast('cursor_move', { x: worldX, y: worldY });
+      } else {
+        this.ws.send('cursor_move', { x: worldX, y: worldY });
+      }
       this.lastSendTime = now;
     }
   }

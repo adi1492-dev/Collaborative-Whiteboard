@@ -24,15 +24,42 @@ func NewRoom(boardID string) *Room {
 func (r *Room) AddClient(client *Client) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	
+	if len(r.clients) == 0 {
+		client.IsHost = true
+	} else {
+		client.IsHost = false
+	}
+	
 	r.clients[client] = true
 }
 
 // RemoveClient removes a client from this room.
 func (r *Room) RemoveClient(client *Client) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	
 	delete(r.clients, client)
 	close(client.Send)
+	
+	// Reassign host if the host left
+	if client.IsHost && len(r.clients) > 0 {
+		client.IsHost = false
+		for c := range r.clients {
+			c.IsHost = true
+			
+			// Notify the new host
+			msg := Message{
+				Type: "host_assigned",
+			}
+			data, _ := json.Marshal(msg)
+			select {
+			case c.Send <- data:
+			default:
+			}
+			break
+		}
+	}
+	r.mu.Unlock()
 }
 
 // ClientCount returns the number of connected clients.
@@ -82,16 +109,17 @@ func (r *Room) BroadcastAll(msg Message) {
 }
 
 // GetUserList returns a list of connected user info for presence display.
-func (r *Room) GetUserList() []map[string]string {
+func (r *Room) GetUserList() []map[string]interface{} {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	users := make([]map[string]string, 0, len(r.clients))
+	users := make([]map[string]interface{}, 0, len(r.clients))
 	for client := range r.clients {
-		users = append(users, map[string]string{
+		users = append(users, map[string]interface{}{
 			"userId":      client.UserID,
 			"displayName": client.UserName,
 			"avatarColor": client.AvatarColor,
+			"isHost":      client.IsHost,
 		})
 	}
 	return users
