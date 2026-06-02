@@ -46,6 +46,22 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
+	// Database Connection Check Middleware
+	router.Use(func(c *gin.Context) {
+		// Exclude health check and assets from DB check
+		if c.Request.URL.Path == "/api/health" || c.Request.URL.Path == "/assets" {
+			c.Next()
+			return
+		}
+		if !database.IsConnected() {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"error": "MongoDB is not running locally. Please start a MongoDB server on port 27017 or update MONGODB_URI in .env",
+			})
+			return
+		}
+		c.Next()
+	})
+
 	// Health check
 	router.GET("/api/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

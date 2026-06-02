@@ -54,6 +54,11 @@ func Disconnect() {
 	}
 }
 
+// IsConnected returns true if the MongoDB database is initialized.
+func IsConnected() bool {
+	return database != nil
+}
+
 // GetCollection returns a MongoDB collection by name.
 func GetCollection(name string) *mongo.Collection {
 	return database.Collection(name)
