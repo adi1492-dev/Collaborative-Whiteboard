@@ -3,8 +3,9 @@
  * and JSON parsing. Event emitter pattern for decoupled message handling.
  */
 export class WebSocketClient {
-  constructor(url, token) {
-    this.url = `${url}?token=${encodeURIComponent(token)}`;
+  constructor(url, tokenGetter) {
+    this.baseUrl = url;
+    this.tokenGetter = tokenGetter;
     this.ws = null;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
@@ -22,7 +23,9 @@ export class WebSocketClient {
     this.intentionallyClosed = false;
     
     try {
-      this.ws = new WebSocket(this.url);
+      const token = typeof this.tokenGetter === 'function' ? this.tokenGetter() : this.tokenGetter;
+      const url = `${this.baseUrl}?token=${encodeURIComponent(token)}`;
+      this.ws = new WebSocket(url);
       
       this.ws.onopen = this._onOpen.bind(this);
       this.ws.onmessage = this._onMessage.bind(this);
