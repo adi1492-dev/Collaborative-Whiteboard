@@ -153,6 +153,7 @@ export class BoardPage {
     
     // 6. Initialize Sync Layer
     this.sync = new SyncManager(this.app, this.boardId, this.cm);
+    this.cm.syncManager = this.sync; // Wire it up so tools can access it!
 
     // 7. Initialize Property Panel
     this.propertyPanel = new PropertyPanel(uiContainer, this.ih, this.em, this.sync);
@@ -232,8 +233,17 @@ export class BoardPage {
     const saveBtn = this.root.querySelector('#manual-save-btn');
     const saveBtnText = this.root.querySelector('#save-btn-text');
     
+    let isSaving = false;
+    let saveQueued = false;
+    
     const triggerSave = async (isManual = false) => {
-      if (!saveBtn || saveBtn.disabled) return;
+      if (!saveBtn) return;
+      if (isSaving) {
+        saveQueued = true;
+        return;
+      }
+      
+      isSaving = true;
       saveBtn.disabled = true;
       saveBtnText.textContent = 'Saving...';
       
@@ -247,22 +257,28 @@ export class BoardPage {
       const success = await this.sync.forceSave();
       
       saveBtnText.textContent = success ? 'Saved!' : 'Failed';
-      setTimeout(() => {
-        if (saveBtn) {
-          saveBtn.disabled = false;
-          saveBtnText.textContent = 'Save';
-        }
-      }, 2000);
+      isSaving = false;
+      
+      if (saveQueued) {
+        saveQueued = false;
+        triggerSave(false);
+      } else {
+        setTimeout(() => {
+          if (!isSaving && saveBtn) {
+            saveBtn.disabled = false;
+            saveBtnText.textContent = 'Save';
+          }
+        }, 1500);
+      }
     };
 
     if (saveBtn) {
       saveBtn.addEventListener('click', () => triggerSave(true));
       
       // Auto-trigger when leaving a tool (pointerup)
-      // This gives exactly the behavior you asked for: leaving the tool clicks save
-      this.cm.container.addEventListener('pointerup', () => {
+      window.addEventListener('pointerup', () => {
         setTimeout(() => {
-          if (this.sync && this.sync.dirtyElements.size > 0 && !saveBtn.disabled) {
+          if (this.sync && this.sync.dirtyElements.size > 0) {
             triggerSave(false); // Auto-save only dirty elements
           }
         }, 100); // Tiny delay to let tools finish their work
