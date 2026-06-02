@@ -29,6 +29,16 @@ func main() {
 	}
 	defer database.Disconnect()
 
+	// Initialize SQLite Fallback DB
+	if err := database.InitSQLite("./offline_queue.db"); err != nil {
+		log.Printf("⚠️  SQLite fallback DB failed to initialize: %v", err)
+	} else {
+		defer database.CloseSQLite()
+	}
+
+	// Start Background Sync Worker for HA
+	database.StartBackgroundSyncWorker()
+
 	// Create WebSocket Hub
 	hub := ws.NewHub()
 	go hub.Run()
