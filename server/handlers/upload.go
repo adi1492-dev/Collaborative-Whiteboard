@@ -53,7 +53,7 @@ func UploadImage(c *gin.Context) {
 
 	// --- Production path: Cloudinary ---
 	if config.AppConfig.CloudinaryURL != "" {
-		url, err := uploadToCloudinary(fileBytes, contentType, config.AppConfig.CloudinaryURL)
+		url, err := uploadToCloudinary(fileBytes, config.AppConfig.CloudinaryURL)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cloud upload failed: " + err.Error()})
 			return
@@ -86,7 +86,7 @@ func UploadImage(c *gin.Context) {
 
 // uploadToCloudinary uploads image bytes to Cloudinary using the Upload API.
 // cloudinaryURL format: cloudinary://api_key:api_secret@cloud_name
-func uploadToCloudinary(data []byte, contentType, cloudinaryURL string) (string, error) {
+func uploadToCloudinary(data []byte, cloudinaryURL string) (string, error) {
 	// Parse cloudinary://api_key:api_secret@cloud_name
 	cloudinaryURL = strings.TrimPrefix(cloudinaryURL, "cloudinary://")
 	parts := strings.SplitN(cloudinaryURL, "@", 2)
