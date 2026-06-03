@@ -16,11 +16,11 @@ RUN go mod download
 # Copy all server source code
 COPY server/ .
 
-# Build — CGO_ENABLED=1 required for sqlite, strip debug symbols for smaller binary
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o server .
+# Build — CGO_ENABLED=0 creates a statically linked binary (no musl libc dependency)
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server .
 
 # ── Stage 2: Minimal production image ────────────────────────────────────────
-FROM alpine:3.19
+FROM alpine:latest
 
 # ca-certificates: needed for HTTPS calls to Turso, Cloudinary, Gemini
 # tzdata: needed for correct time zone handling
