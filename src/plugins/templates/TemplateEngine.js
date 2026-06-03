@@ -108,6 +108,9 @@ export class TemplateEngine {
       return this.sync._hydrateElement(elData);
     }).filter(Boolean);
 
+    // Auto-correct template elements to match current canvas background
+    this.cm.autoCorrectElements(newElements);
+
     // Batch insert and sync
     newElements.forEach(el => {
       this.em.setElement(el, false);

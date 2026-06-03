@@ -1024,8 +1024,34 @@ export class BoardPage {
     document.body.appendChild(panel);
     this._uiBuilderTheme = 'dark';
 
-    panel.querySelector('#ui-theme-dark')?.addEventListener('click', () => { this._uiBuilderTheme = 'dark'; });
-    panel.querySelector('#ui-theme-light')?.addEventListener('click', () => { this._uiBuilderTheme = 'light'; });
+    const applyTheme = (theme) => {
+      this._uiBuilderTheme = theme;
+      
+      const darkBtn = panel.querySelector('#ui-theme-dark');
+      const lightBtn = panel.querySelector('#ui-theme-light');
+      if (theme === 'dark') {
+        darkBtn.className = 'btn-primary';
+        lightBtn.className = 'btn btn-outline';
+      } else {
+        lightBtn.className = 'btn-primary';
+        darkBtn.className = 'btn btn-outline';
+      }
+
+      if (this.em) {
+        let changed = false;
+        for (const el of this.em.elements.values()) {
+          if (el.type === 'ui' && el.uiTheme !== theme) {
+            el.uiTheme = theme;
+            changed = true;
+            if (this.sync) this.sync.broadcastUpdate(el);
+          }
+        }
+        if (changed) this.cm.requestStaticRender();
+      }
+    };
+
+    panel.querySelector('#ui-theme-dark')?.addEventListener('click', () => applyTheme('dark'));
+    panel.querySelector('#ui-theme-light')?.addEventListener('click', () => applyTheme('light'));
 
     let panelVisible = false;
     uiBtn.addEventListener('click', () => {

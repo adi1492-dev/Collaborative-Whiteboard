@@ -43,7 +43,7 @@ export class StickyNote extends Element {
     // Draw text
     if (this.text) {
       // Auto-adjust text color based on background luminance (simplified: use dark for most stickies)
-      ctx.fillStyle = '#131313'; 
+      ctx.fillStyle = this.style.fontColor || '#131313'; 
       ctx.font = `${this.style.fontSize}px ${this.style.fontFamily}`;
       ctx.textAlign = this.style.textAlign;
       ctx.textBaseline = 'top';

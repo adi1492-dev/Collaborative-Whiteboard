@@ -92,29 +92,52 @@ export class CanvasManager {
   setBackground(type) {
     this.backgroundType = type;
     document.documentElement.setAttribute('data-canvas-bg', type);
+    this.autoCorrectElements();
+    this.requestStaticRender();
+  }
+
+  autoCorrectElements(elementsArray = null) {
+    if (!this.elementManager && !elementsArray) return;
     
-    // Auto-correct text element colors for contrast
-    if (this.elementManager) {
-      let changed = false;
-      for (const el of this.elementManager.elements.values()) {
-        if (el.type === 'text') {
-          // If canvas is dark and text is dark
-          if ((type === 'solid-dark' || this.isDarkMode) && el.style.fillColor === '#0b1c30') {
-            el.style.fillColor = '#e5e2e1';
-            changed = true;
-            if (this.syncManager) this.syncManager.broadcastUpdate(el);
-          }
-          // If canvas is light and text is light
-          else if ((type === 'solid-light' || type === 'blank' || (!this.isDarkMode && type !== 'solid-dark')) && el.style.fillColor === '#e5e2e1') {
-            el.style.fillColor = '#0b1c30';
-            changed = true;
-            if (this.syncManager) this.syncManager.broadcastUpdate(el);
-          }
+    let changed = false;
+    const elements = elementsArray || Array.from(this.elementManager.elements.values());
+    const isDarkBg = this.backgroundType === 'solid-dark' || (this.isDarkMode && this.backgroundType !== 'solid-light' && this.backgroundType !== 'blank');
+
+    for (const el of elements) {
+      if (el.type === 'text') {
+        if (isDarkBg && el.style.fillColor === '#0b1c30') {
+          el.style.fillColor = '#e5e2e1';
+          changed = true;
+          if (this.syncManager && !elementsArray) this.syncManager.broadcastUpdate(el);
+        } else if (!isDarkBg && el.style.fillColor === '#e5e2e1') {
+          el.style.fillColor = '#0b1c30';
+          changed = true;
+          if (this.syncManager && !elementsArray) this.syncManager.broadcastUpdate(el);
+        }
+      }
+      else if (el.type === 'ui') {
+        const targetTheme = isDarkBg ? 'dark' : 'light';
+        if (el.uiTheme !== targetTheme) {
+          el.uiTheme = targetTheme;
+          changed = true;
+          if (this.syncManager && !elementsArray) this.syncManager.broadcastUpdate(el);
+        }
+      }
+      else if (el.type === 'sticky') {
+        // Sticky notes can have transparent/faint backgrounds that blend into the canvas
+        if (isDarkBg && el.style.fontColor !== '#e5e2e1') {
+          el.style.fontColor = '#e5e2e1';
+          changed = true;
+          if (this.syncManager && !elementsArray) this.syncManager.broadcastUpdate(el);
+        } else if (!isDarkBg && el.style.fontColor === '#e5e2e1') {
+          el.style.fontColor = '#131313';
+          changed = true;
+          if (this.syncManager && !elementsArray) this.syncManager.broadcastUpdate(el);
         }
       }
     }
     
-    this.requestStaticRender();
+    if (changed && !elementsArray) this.requestStaticRender();
   }
 
   requestStaticRender() {
