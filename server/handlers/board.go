@@ -294,4 +294,24 @@ func generateRandomRoomKey(length int) string {
 	return string(b)
 }
 
+// RemoveCollaborator handles DELETE /api/boards/:id/collaborators/:userId
+func RemoveCollaborator(c *gin.Context) {
+	boardID := c.Param("id")
+	targetUserID := c.Param("userId")
+	userID := auth.GetUserID(c)
+
+	board, err := database.SQLiteGetBoard(boardID)
+	if err != nil || board.OwnerID != userID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Board not found or unauthorized"})
+		return
+	}
+
+	if err := database.SQLiteRemoveCollaborator(boardID, targetUserID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove collaborator"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Collaborator removed successfully"})
+}
+
 

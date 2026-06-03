@@ -122,6 +122,11 @@ export class BoardPage {
               <span class="material-symbols-outlined" style="font-size:16px">download</span>Export
             </button>
 
+            <!-- Manage Collaborators (Owner Only) -->
+            <button class="btn btn-outline" id="manage-collabs-btn" style="display:none;padding:6px 12px;height:auto;gap:4px;">
+              <span class="material-symbols-outlined" style="font-size:16px">group</span>Collaborators
+            </button>
+
             <!-- Save -->
             <button class="btn btn-primary" id="manual-save-btn" style="padding:6px 12px;height:auto;">
               <span class="material-symbols-outlined" style="font-size:16px">save</span>
@@ -519,6 +524,98 @@ export class BoardPage {
           Toast.show('Invite link copied to clipboard!', 'success', 2500);
         });
       }
+    });
+
+    // Manage Collaborators button logic
+    const manageBtn = this.root.querySelector('#manage-collabs-btn');
+    if (manageBtn) {
+      manageBtn.style.display = 'flex';
+      manageBtn.addEventListener('click', () => this._showCollaboratorsModal());
+    }
+  }
+
+  _showCollaboratorsModal() {
+    // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-content glass';
+    modal.style.cssText = 'background:var(--surface);padding:24px;border-radius:12px;width:400px;max-width:90vw;display:flex;flex-direction:column;gap:16px;box-shadow:0 8px 32px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.1);';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+    header.innerHTML = `
+      <h3 style="margin:0;font-size:18px;color:var(--on-surface);">Manage Collaborators</h3>
+      <button class="icon-btn" id="close-collab-modal" style="margin:0;"><span class="material-symbols-outlined">close</span></button>
+    `;
+
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;';
+
+    const collabs = this.boardData.collaborators || [];
+    if (collabs.length === 0) {
+      list.innerHTML = `<div style="color:var(--on-surface-variant);font-size:14px;text-align:center;padding:24px 0;">No collaborators yet. Share your room key!</div>`;
+    } else {
+      collabs.forEach(collab => {
+        const item = document.createElement('div');
+        item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(255,255,255,0.05);border-radius:8px;';
+        
+        // Try to safely extract string values from map or object
+        const cid = typeof collab.userId === 'string' ? collab.userId : (collab.userId?.$oid || JSON.stringify(collab.userId));
+        const cname = collab.displayName || 'Collaborator';
+        
+        item.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:24px;height:24px;border-radius:50%;background:${collab.avatarColor || 'var(--primary)'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold;">
+              ${cname.charAt(0).toUpperCase()}
+            </div>
+            <span style="font-size:14px;color:var(--on-surface);">${cname}</span>
+          </div>
+          <button class="icon-btn remove-collab-btn" data-id="${cid}" style="color:#ff516a;width:28px;height:28px;" title="Remove access">
+            <span class="material-symbols-outlined" style="font-size:16px;">person_remove</span>
+          </button>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    modal.appendChild(header);
+    modal.appendChild(list);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const closeModal = () => overlay.remove();
+    overlay.querySelector('#close-collab-modal').addEventListener('click', closeModal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeModal();
+    });
+
+    list.querySelectorAll('.remove-collab-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const targetId = e.currentTarget.getAttribute('data-id');
+        if (confirm('Are you sure you want to remove this collaborator?')) {
+          e.currentTarget.disabled = true;
+          try {
+            const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/collaborators/${targetId}`, { method: 'DELETE' });
+            if (res.ok) {
+              Toast.show('Collaborator removed.', 'success');
+              // Update local state
+              this.boardData.collaborators = this.boardData.collaborators.filter(c => {
+                const cid = typeof c.userId === 'string' ? c.userId : (c.userId?.$oid || '');
+                return cid !== targetId;
+              });
+              closeModal();
+              this._showCollaboratorsModal(); // Reopen to refresh list
+            } else {
+              Toast.show('Failed to remove.', 'error');
+            }
+          } catch (err) {
+            Toast.show('Error removing collaborator.', 'error');
+          }
+        }
+      });
     });
   }
 

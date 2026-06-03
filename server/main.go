@@ -90,6 +90,7 @@ func main() {
 		boardGroup.DELETE("/:id", handlers.DeleteBoard)
 		boardGroup.POST("/:id/share", handlers.UpdateShareLink)
 		boardGroup.POST("/:id/key/refresh", handlers.RefreshRoomKey)
+		boardGroup.DELETE("/:id/collaborators/:userId", handlers.RemoveCollaborator)
 		boardGroup.POST("/:id/sync", handlers.SyncBoardElements)
 		boardGroup.POST("/:id/ai/summarize", handlers.SummarizeBoard)
 	}

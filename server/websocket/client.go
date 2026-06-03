@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/canvasflow/server/auth"
-	"github.com/canvasflow/server/database"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -186,57 +185,9 @@ func (c *Client) writePump() {
 // handleMessage routes incoming messages to the appropriate handler.
 func (c *Client) handleMessage(msg Message) {
 	switch msg.Type {
-	case "element_create", "element_update", "element_reorder":
-		// Save to Database
-		var element map[string]interface{}
-		if err := json.Unmarshal(msg.Payload, &element); err == nil {
-			if id, ok := element["id"].(string); ok && id != "" {
-				_ = database.SQLiteSaveElement(c.BoardID, id, element)
-			}
-		}
-		
-		// Broadcast element operations to all other clients in the room
-		if c.Room != nil {
-			c.Room.Broadcast(msg, c)
-		}
-		
-	case "element_delete":
-		var payload struct {
-			ElementID string `json:"elementId"`
-		}
-		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.ElementID != "" {
-			_ = database.SQLiteDeleteElement(c.BoardID, payload.ElementID)
-		}
-		if c.Room != nil {
-			c.Room.Broadcast(msg, c)
-		}
-
 	case "webrtc_offer", "webrtc_answer", "webrtc_ice":
 		// WebRTC data channel signaling (replaces rtc_offer)
 		c.handleRTCSignaling(msg)
-
-	case "cursor_move":
-		// Broadcast cursor position to all other clients
-		if c.Room != nil {
-			c.Room.Broadcast(msg, c)
-		}
-
-	case "selection_change":
-		if c.Room != nil {
-			c.Room.Broadcast(msg, c)
-		}
-
-	case "text_insert", "text_delete":
-		// CRDT text operations — broadcast to all peers
-		if c.Room != nil {
-			c.Room.Broadcast(msg, c)
-		}
-
-	case "rtc_mute_state":
-		// Broadcast mute state to all
-		if c.Room != nil {
-			c.Room.Broadcast(msg, c)
-		}
 
 	case "sync_request":
 		// Client requesting full state (on reconnect)

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log"
 	"time"
@@ -172,20 +173,29 @@ func SQLiteGetBoard(boardID string) (*SQLiteBoard, error) {
 	row := sqliteDB.QueryRow(`SELECT id, board_id, title, background, owner_id, share_link, share_permission, room_key, room_key_expires_at, collaborators, created_at, updated_at FROM boards WHERE board_id = ?`, boardID)
 	b := &SQLiteBoard{}
 	var collabJSON string
-	var roomKeyExpiresAt *time.Time
-	err := row.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &b.RoomKey, &roomKeyExpiresAt, &collabJSON, &b.CreatedAt, &b.UpdatedAt)
+	var roomKey sql.NullString
+	var roomKeyExpiresAt sql.NullTime
+	err := row.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &roomKey, &roomKeyExpiresAt, &collabJSON, &b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
-	if roomKeyExpiresAt != nil {
-		b.RoomKeyExpiresAt = *roomKeyExpiresAt
+	if roomKey.Valid {
+		b.RoomKey = roomKey.String
+	}
+	if roomKeyExpiresAt.Valid {
+		b.RoomKeyExpiresAt = roomKeyExpiresAt.Time
 	}
 	json.Unmarshal([]byte(collabJSON), &b.Collaborators)
 	return b, nil
 }
 
 func SQLiteListBoards(userID string) ([]*SQLiteBoard, error) {
-	rows, err := sqliteDB.Query(`SELECT id, board_id, title, background, owner_id, share_link, share_permission, room_key, room_key_expires_at, collaborators, created_at, updated_at FROM boards WHERE owner_id = ? ORDER BY updated_at DESC`, userID)
+	rows, err := sqliteDB.Query(`
+		SELECT id, board_id, title, background, owner_id, share_link, share_permission, room_key, room_key_expires_at, collaborators, created_at, updated_at 
+		FROM boards 
+		WHERE owner_id = ? OR collaborators LIKE '%' || '"userId":"' || ? || '"' || '%'
+		ORDER BY updated_at DESC
+	`, userID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -195,12 +205,16 @@ func SQLiteListBoards(userID string) ([]*SQLiteBoard, error) {
 	for rows.Next() {
 		b := &SQLiteBoard{}
 		var collabJSON string
-		var roomKeyExpiresAt *time.Time
-		if err := rows.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &b.RoomKey, &roomKeyExpiresAt, &collabJSON, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		var roomKey sql.NullString
+		var roomKeyExpiresAt sql.NullTime
+		if err := rows.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &roomKey, &roomKeyExpiresAt, &collabJSON, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			continue
 		}
-		if roomKeyExpiresAt != nil {
-			b.RoomKeyExpiresAt = *roomKeyExpiresAt
+		if roomKey.Valid {
+			b.RoomKey = roomKey.String
+		}
+		if roomKeyExpiresAt.Valid {
+			b.RoomKeyExpiresAt = roomKeyExpiresAt.Time
 		}
 		json.Unmarshal([]byte(collabJSON), &b.Collaborators)
 		boards = append(boards, b)
@@ -222,13 +236,17 @@ func SQLiteGetBoardByRoomKey(roomKey string) (*SQLiteBoard, error) {
 	row := sqliteDB.QueryRow(`SELECT id, board_id, title, background, owner_id, share_link, share_permission, room_key, room_key_expires_at, collaborators, created_at, updated_at FROM boards WHERE room_key = ? AND room_key_expires_at > ?`, roomKey, time.Now())
 	b := &SQLiteBoard{}
 	var collabJSON string
-	var roomKeyExpiresAt *time.Time
-	err := row.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &b.RoomKey, &roomKeyExpiresAt, &collabJSON, &b.CreatedAt, &b.UpdatedAt)
+	var dbRoomKey sql.NullString
+	var roomKeyExpiresAt sql.NullTime
+	err := row.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &dbRoomKey, &roomKeyExpiresAt, &collabJSON, &b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
-	if roomKeyExpiresAt != nil {
-		b.RoomKeyExpiresAt = *roomKeyExpiresAt
+	if dbRoomKey.Valid {
+		b.RoomKey = dbRoomKey.String
+	}
+	if roomKeyExpiresAt.Valid {
+		b.RoomKeyExpiresAt = roomKeyExpiresAt.Time
 	}
 	json.Unmarshal([]byte(collabJSON), &b.Collaborators)
 	return b, nil
@@ -246,6 +264,28 @@ func SQLiteAddCollaborator(boardID, userID string) error {
 	}
 	b.Collaborators = append(b.Collaborators, map[string]interface{}{"userId": userID, "permission": "edit"})
 	collabJSON, _ := json.Marshal(b.Collaborators)
+	_, err = sqliteDB.Exec(`UPDATE boards SET collaborators = ?, updated_at = ? WHERE board_id = ?`, string(collabJSON), time.Now(), boardID)
+	return err
+}
+
+func SQLiteRemoveCollaborator(boardID, userID string) error {
+	b, err := SQLiteGetBoard(boardID)
+	if err != nil {
+		return err
+	}
+	
+	newCollaborators := []map[string]interface{}{}
+	for _, c := range b.Collaborators {
+		if c["userId"] != userID {
+			newCollaborators = append(newCollaborators, c)
+		}
+	}
+	
+	if len(newCollaborators) == len(b.Collaborators) {
+		return nil // Not found, nothing to do
+	}
+	
+	collabJSON, _ := json.Marshal(newCollaborators)
 	_, err = sqliteDB.Exec(`UPDATE boards SET collaborators = ?, updated_at = ? WHERE board_id = ?`, string(collabJSON), time.Now(), boardID)
 	return err
 }

@@ -58,6 +58,10 @@ export class PresenceSync {
     }
   }
 
+  removeCursor(userId) {
+    this.cursors.delete(userId);
+  }
+
   renderCursors(ctx, currentScale) {
     const now = Date.now();
     let hasChanges = false;

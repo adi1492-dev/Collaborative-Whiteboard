@@ -85,6 +85,9 @@ export class WebRTCManager {
       this.peers.delete(peerId);
     }
     this.iceQueues.delete(peerId);
+    if (this.sync && this.sync.presenceSync) {
+      this.sync.presenceSync.removeCursor(peerId);
+    }
   }
 
   // --- WebRTC Signaling ---
