@@ -14,14 +14,16 @@ export class WebSocketClient {
     this.isConnected = false;
     this.isConnecting = false;
     this.intentionallyClosed = false;
+    // BUG-015 fix: track reconnect timer so we can cancel it on disconnect
+    this._reconnectTimer = null;
     this.clientId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   }
 
   connect() {
     if (this.isConnected || this.isConnecting) return;
-    
+
     const token = typeof this.tokenGetter === 'function' ? this.tokenGetter() : this.tokenGetter;
-    
+
     // Don't attempt connection without a valid token
     if (!token || token === 'null' || token === 'undefined') {
       console.warn('[WS] No auth token available, skipping WebSocket connection. Will retry when token is available.');
@@ -29,14 +31,14 @@ export class WebSocketClient {
       setTimeout(() => this._emit('disconnected', { code: 4401, reason: 'No auth token' }), 0);
       return;
     }
-    
+
     this.isConnecting = true;
     this.intentionallyClosed = false;
-    
+
     try {
       const url = `${this.baseUrl}?token=${encodeURIComponent(token)}&clientId=${this.clientId}`;
       this.ws = new WebSocket(url);
-      
+
       this.ws.onopen = this._onOpen.bind(this);
       this.ws.onmessage = this._onMessage.bind(this);
       this.ws.onclose = this._onClose.bind(this);
@@ -50,10 +52,17 @@ export class WebSocketClient {
 
   disconnect() {
     this.intentionallyClosed = true;
+
+    // BUG-015 fix: cancel any pending reconnect timer
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
     if (this.ws) {
       const socket = this.ws;
       this.ws = null; // Detach immediately
-      
+
       // Allow 150ms for the OS to flush any remaining packets in the TCP buffer
       setTimeout(() => {
         if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
@@ -130,9 +139,9 @@ export class WebSocketClient {
     this.isConnected = false;
     this.isConnecting = false;
     this.ws = null;
-    
+
     this._emit('disconnected', event);
-    
+
     if (!this.intentionallyClosed) {
       this._scheduleReconnect();
     }
@@ -158,8 +167,12 @@ export class WebSocketClient {
     this.reconnectAttempts++;
     console.log(`Scheduling reconnect in ${Math.round(finalDelay)}ms (attempt ${this.reconnectAttempts})`);
 
-    setTimeout(() => {
-      this.connect();
+    // BUG-015 fix: store the timer reference so disconnect() can cancel it
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      if (!this.intentionallyClosed) {
+        this.connect();
+      }
     }, finalDelay);
   }
 }

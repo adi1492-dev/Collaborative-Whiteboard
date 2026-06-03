@@ -1,15 +1,16 @@
 /**
  * InputHandler — Centralizes pointer, touch, and keyboard events.
  * Delegates actions to the currently active tool or handles global shortcuts.
+ * BUG-011 fix: Ctrl+V paste and Ctrl+D duplicate now push to history.
  */
 export class InputHandler {
   constructor(canvasManager, elementManager) {
     this.cm = canvasManager;
     this.em = elementManager;
-    
+
     this.activeTool = null;
     this.tools = new Map();
-    
+
     this.isSpaceDown = false;
     this.isPanning = false;
     this.lastPanPoint = null;
@@ -78,12 +79,12 @@ export class InputHandler {
 
   _onPointerDown(e) {
     if (e.button !== 0 && e.pointerType === 'mouse' && e.button !== 1) return;
-    
+
     e.preventDefault();
     this.cm.container.setPointerCapture(e.pointerId);
 
     const pt = this.cm.getPointerEventCoords(e);
-    
+
     if (e.button === 1 || this.isSpaceDown) {
       this.isPanning = true;
       this.lastPanPoint = { x: e.clientX, y: e.clientY };
@@ -146,7 +147,7 @@ export class InputHandler {
     } else {
       this.cm.transform.panBy(-e.deltaX, -e.deltaY);
     }
-    
+
     this.cm.requestStaticRender();
     this._updateZoomUI();
   }
@@ -203,6 +204,15 @@ export class InputHandler {
               if (hydrated) {
                 this.em.setElement(hydrated);
                 this.cm.syncManager.broadcastCreate(hydrated);
+                // BUG-011 fix: add paste to undo history
+                if (this.historyManager) {
+                  const el = hydrated;
+                  this.historyManager.push({
+                    description: 'Paste element',
+                    apply: () => { this.em.setElement(el); this.cm.syncManager?.broadcastCreate(el); },
+                    revert: () => { this.em.removeElement(el.id); this.cm.syncManager?.broadcastDelete(el.id); }
+                  });
+                }
               }
             }
           }
@@ -219,6 +229,15 @@ export class InputHandler {
                 this.em.setElement(hydrated);
                 this.cm.syncManager.broadcastCreate(hydrated);
                 this.em.select(hydrated.id, true);
+                // BUG-011 fix: add duplicate to undo history
+                if (this.historyManager) {
+                  const dup = hydrated;
+                  this.historyManager.push({
+                    description: 'Duplicate element',
+                    apply: () => { this.em.setElement(dup); this.cm.syncManager?.broadcastCreate(dup); },
+                    revert: () => { this.em.removeElement(dup.id); this.cm.syncManager?.broadcastDelete(dup.id); }
+                  });
+                }
               }
             }
           }

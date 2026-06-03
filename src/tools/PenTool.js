@@ -13,6 +13,8 @@ export class PenTool extends Tool {
     this.hasBroadcastCreate = false;
     this.color = '#c0c1ff'; // Default primary
     this.strokeWidth = 3;
+    // BUG-002 fix: track last absolute point for correct distance check
+    this._lastAbsPt = null;
   }
 
   onActivate() {
@@ -23,25 +25,30 @@ export class PenTool extends Tool {
     this.isDrawing = true;
     this.hasBroadcastCreate = false;
     this.em.clearSelection();
-    
+
     // Create new stroke — DON'T broadcast yet (no visible content)
     this.currentElement = new FreehandElement({
       points: [{ x: pt.x, y: pt.y }],
       style: { strokeColor: this.color, strokeWidth: this.strokeWidth },
       createdBy: this.cm.syncManager ? this.cm.syncManager.userId : 'local'
     });
+
+    // BUG-002 fix: seed the last absolute point tracker
+    this._lastAbsPt = { x: pt.x, y: pt.y };
   }
 
   onPointerMove(pt, e) {
     if (!this.isDrawing || !this.currentElement) return;
 
-    const lastPt = this.currentElement.points[this.currentElement.points.length - 1];
-    const dx = pt.x - (this.currentElement.x + lastPt.x);
-    const dy = pt.y - (this.currentElement.y + lastPt.y);
-    
+    // BUG-002 fix: compare against the last absolute position, not a
+    // re-offsetted relative point (which caused double-counting of origin).
+    const dx = pt.x - (this._lastAbsPt ? this._lastAbsPt.x : pt.x);
+    const dy = pt.y - (this._lastAbsPt ? this._lastAbsPt.y : pt.y);
+
     if (dx * dx + dy * dy > 4) { // 2px minimum distance
       this.currentElement.addPoint({ x: pt.x, y: pt.y });
-      
+      this._lastAbsPt = { x: pt.x, y: pt.y };
+
       if (this.cm.syncManager) {
         if (!this.hasBroadcastCreate && this.currentElement.points.length >= 2) {
           // First time we have visible content — broadcast creation
@@ -53,7 +60,7 @@ export class PenTool extends Tool {
         }
       }
     }
-    
+
     this.cm.requestStaticRender();
   }
 
@@ -62,7 +69,7 @@ export class PenTool extends Tool {
       if (this.currentElement.points.length > 1) {
         // Commit element to element manager
         this.em.setElement(this.currentElement);
-        
+
         if (this.cm.syncManager) {
           if (!this.hasBroadcastCreate) {
             this.cm.syncManager.broadcastCreate(this.currentElement);
@@ -92,10 +99,11 @@ export class PenTool extends Tool {
           this.cm.syncManager.broadcastDelete(this.currentElement.id);
         }
       }
-      
+
       this.isDrawing = false;
       this.currentElement = null;
       this.hasBroadcastCreate = false;
+      this._lastAbsPt = null;
     }
   }
 

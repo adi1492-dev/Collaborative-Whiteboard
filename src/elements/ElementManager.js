@@ -1,6 +1,7 @@
 /**
  * ElementManager — Manages the lifecycle and rendering of all elements.
  * Handles spatial indexing (z-index sorting), selection, and deletion.
+ * BUG-010 fix: deleteSelection now records a history action for undo/redo.
  */
 export class ElementManager {
   constructor(canvasManager) {
@@ -8,9 +9,9 @@ export class ElementManager {
     this.elements = new Map(); // id -> Element
     this.sortedElements = []; // Sorted by zIndex for rendering
     this.selectedIds = new Set();
-    
+
     // The currently active tool might be creating an element that isn't committed yet
-    this.draftElement = null; 
+    this.draftElement = null;
   }
 
   /**
@@ -64,14 +65,14 @@ export class ElementManager {
   renderStatic(ctx, viewportBounds) {
     // padding for strokes and rotation
     const padding = 100;
-    
+
     for (const el of this.sortedElements) {
       if (!el.visible) continue;
-      
+
       // Simple frustum culling
       const elRight = el.x + el.width;
       const elBottom = el.y + el.height;
-      
+
       if (
         elRight < viewportBounds.minX - padding ||
         el.x > viewportBounds.maxX + padding ||
@@ -82,7 +83,7 @@ export class ElementManager {
       }
 
       ctx.save();
-      
+
       // Apply element transforms
       if (el.rotation !== 0) {
         const cx = el.x + el.width / 2;
@@ -91,11 +92,11 @@ export class ElementManager {
         ctx.rotate(el.rotation);
         ctx.translate(-cx, -cy);
       }
-      
+
       ctx.globalAlpha = el.opacity;
-      
+
       el.render(ctx);
-      
+
       ctx.restore();
     }
   }
@@ -105,13 +106,13 @@ export class ElementManager {
    */
   renderSelection(ctx, currentScale) {
     if (this.selectedIds.size === 0) return;
-    
+
     const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
     const primaryColor = isDarkMode ? '#c0c1ff' : '#3f3bbd';
-    
+
     // Scale-invariant handle size
     const handleSize = 8 / currentScale;
-    
+
     ctx.strokeStyle = primaryColor;
     ctx.lineWidth = 1.5 / currentScale;
 
@@ -120,7 +121,7 @@ export class ElementManager {
       if (!el || !el.visible) continue;
 
       ctx.save();
-      
+
       if (el.rotation !== 0) {
         const cx = el.x + el.width / 2;
         const cy = el.y + el.height / 2;
@@ -130,28 +131,28 @@ export class ElementManager {
       }
 
       // Draw bounding box
-      const padding = 4 / currentScale;
+      const pad = 4 / currentScale;
       ctx.strokeRect(
-        el.x - padding, 
-        el.y - padding, 
-        el.width + padding * 2, 
-        el.height + padding * 2
+        el.x - pad,
+        el.y - pad,
+        el.width + pad * 2,
+        el.height + pad * 2
       );
 
       // Draw handles for single selection
       if (this.selectedIds.size === 1 && !el.locked) {
         ctx.fillStyle = isDarkMode ? '#131313' : '#ffffff';
-        
+
         const corners = [
-          { x: el.x - padding, y: el.y - padding },
-          { x: el.x + el.width + padding, y: el.y - padding },
-          { x: el.x - padding, y: el.y + el.height + padding },
-          { x: el.x + el.width + padding, y: el.y + el.height + padding }
+          { x: el.x - pad, y: el.y - pad },
+          { x: el.x + el.width + pad, y: el.y - pad },
+          { x: el.x - pad, y: el.y + el.height + pad },
+          { x: el.x + el.width + pad, y: el.y + el.height + pad }
         ];
 
         for (const c of corners) {
           ctx.beginPath();
-          ctx.rect(c.x - handleSize/2, c.y - handleSize/2, handleSize, handleSize);
+          ctx.rect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
           ctx.fill();
           ctx.stroke();
         }
@@ -176,22 +177,55 @@ export class ElementManager {
 
   deleteSelection() {
     const deleted = [];
+    const deletedSnapshots = []; // BUG-010: save element copies for undo
+
     for (const id of this.selectedIds) {
       const el = this.elements.get(id);
       if (el && !el.locked) {
+        // Save a JSON snapshot for potential undo restoration
+        deletedSnapshots.push(el.toJSON());
         this.removeElement(id, false);
         deleted.push(id);
       }
     }
-    
+
     this.selectedIds.clear();
-    
+
     if (deleted.length > 0) {
       this.cm.requestStaticRender();
-      
+
       // Notify sync manager
       if (this.cm.syncManager) {
         deleted.forEach(id => this.cm.syncManager.broadcastDelete(id));
+      }
+
+      // BUG-010 fix: push delete action to history for undo/redo support
+      if (this.cm.historyManager) {
+        const snapshots = [...deletedSnapshots];
+        const syncMgr = this.cm.syncManager;
+
+        this.cm.historyManager.push({
+          description: `Delete ${snapshots.length} element(s)`,
+          // apply = redo the delete
+          apply: () => {
+            snapshots.forEach(snap => {
+              this.removeElement(snap.id, false);
+              syncMgr?.broadcastDelete(snap.id);
+            });
+            this.cm.requestStaticRender();
+          },
+          // revert = undo the delete, restore elements
+          revert: () => {
+            snapshots.forEach(snap => {
+              const hydrated = syncMgr ? syncMgr._hydrateElement(snap) : null;
+              if (hydrated) {
+                this.setElement(hydrated, false);
+                syncMgr?.broadcastCreate(hydrated);
+              }
+            });
+            this.cm.requestStaticRender();
+          }
+        });
       }
     }
   }

@@ -206,9 +206,14 @@ export class SelectTool extends Tool {
       if (this.cm.syncManager) {
         this.cm.syncManager.broadcastUpdate(el);
       }
-      // History
+      // BUG-014 fix: capture primitive values only, never reference the live element
       if (this.cm.historyManager) {
-        const prev = { ...this.resizeStartState };
+        const prev = {
+          x: this.resizeStartState.x,
+          y: this.resizeStartState.y,
+          width: this.resizeStartState.width,
+          height: this.resizeStartState.height
+        };
         const next = { x: el.x, y: el.y, width: el.width, height: el.height };
         this.cm.historyManager.push({
           description: 'Resize element',

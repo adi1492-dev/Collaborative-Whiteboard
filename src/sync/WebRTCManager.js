@@ -9,21 +9,21 @@ export class WebRTCManager {
     this.sync = syncManager;
     this.ws = wsClient;
     this.localClientId = localClientId;
-    
+
     // Map of targetClientId -> RTCPeerConnection
     this.peers = new Map();
     // Map of targetClientId -> RTCDataChannel
     this.dataChannels = new Map();
     // Map of targetClientId -> Array of ICE Candidates (queue before remote sdp is set)
     this.iceQueues = new Map();
-    
+
     this._bindWebSocketSignals();
   }
 
   _bindWebSocketSignals() {
     this.ws.on('peer_joined', this._onPeerJoined.bind(this));
     this.ws.on('peer_left', this._onPeerLeft.bind(this));
-    
+
     this.ws.on('webrtc_offer', this._onOffer.bind(this));
     this.ws.on('webrtc_answer', this._onAnswer.bind(this));
     this.ws.on('webrtc_ice', this._onIceCandidate.bind(this));
@@ -42,23 +42,23 @@ export class WebRTCManager {
       console.log(`[WebRTC] Already connected to ${peerId}, skipping duplicate peer_joined`);
       return;
     }
-    
+
     // The peer who was ALREADY in the room initiates the offer
     console.log(`[WebRTC] Peer joined: ${peerId}, initiating connection...`);
     const pc = this._createPeerConnection(peerId);
-    
+
     // Create Data Channel
     const dc = pc.createDataChannel('board_sync', {
       ordered: false,    // Unreliable UDP-like delivery for speed
       maxRetransmits: 0
     });
     this._setupDataChannel(peerId, dc);
-    
+
     // Create Offer
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      
+
       this.ws.send('webrtc_offer', {
         targetClientId: peerId,
         sdp: offer
@@ -91,15 +91,6 @@ export class WebRTCManager {
   }
 
   // --- WebRTC Signaling ---
-
-  destroy() {
-    for (const peerId of this.peers.keys()) {
-      this._cleanupPeer(peerId);
-    }
-    this.peers.clear();
-    this.dataChannels.clear();
-    this.iceQueues.clear();
-  }
 
   _createPeerConnection(peerId) {
     const pc = new RTCPeerConnection({
@@ -143,7 +134,7 @@ export class WebRTCManager {
     };
     dc.onclose = () => console.log(`[WebRTC] DataChannel CLOSED with ${peerId}`);
     dc.onerror = (err) => console.error(`[WebRTC] DataChannel ERROR with ${peerId}:`, err);
-    
+
     dc.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
@@ -177,21 +168,21 @@ export class WebRTCManager {
     const payload = msg.payload;
     const peerId = msg.clientId;
     if (!peerId || peerId === this.localClientId) return;
-    
+
     console.log(`[WebRTC] Received offer from ${peerId}`);
-    
+
     let pc = this.peers.get(peerId);
     if (!pc) {
       pc = this._createPeerConnection(peerId);
     }
-    
+
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
       await this._processQueuedIceCandidates(peerId, pc);
-      
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      
+
       this.ws.send('webrtc_answer', {
         targetClientId: peerId,
         sdp: answer
@@ -205,7 +196,7 @@ export class WebRTCManager {
     const payload = msg.payload;
     const peerId = msg.clientId;
     const pc = this.peers.get(peerId);
-    
+
     if (pc) {
       console.log(`[WebRTC] Received answer from ${peerId}`);
       try {
@@ -221,7 +212,7 @@ export class WebRTCManager {
     const payload = msg.payload;
     const peerId = msg.clientId;
     const pc = this.peers.get(peerId);
-    
+
     if (pc && pc.remoteDescription && pc.remoteDescription.type) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
@@ -240,7 +231,7 @@ export class WebRTCManager {
   async _processQueuedIceCandidates(peerId, pc) {
     const queue = this.iceQueues.get(peerId);
     if (!queue || queue.length === 0) return;
-    
+
     console.log(`[WebRTC] Processing ${queue.length} queued ICE candidates for ${peerId}`);
     for (const candidate of queue) {
       try {
@@ -258,7 +249,7 @@ export class WebRTCManager {
     // Inject peer info so handlers know the source
     msg.clientId = peerId;
     msg.userId = msg.payload?.userId || peerId; // Use true userId if available
-    
+
     switch (msg.type) {
       case 'element_create':
         this.sync._onRemoteCreate(msg);
@@ -281,7 +272,7 @@ export class WebRTCManager {
   // Send a message to ALL connected peers directly
   broadcast(type, payload) {
     const msgString = JSON.stringify({ type, payload });
-    
+
     let sent = 0;
     for (const [peerId, dc] of this.dataChannels.entries()) {
       if (dc.readyState === 'open') {
@@ -305,9 +296,13 @@ export class WebRTCManager {
     return count;
   }
 
+  // BUG-007 fix: single destroy() that fully clears all maps
   destroy() {
     for (const peerId of [...this.peers.keys()]) {
       this._cleanupPeer(peerId);
     }
+    this.peers.clear();
+    this.dataChannels.clear();
+    this.iceQueues.clear();
   }
 }

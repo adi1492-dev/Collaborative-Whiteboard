@@ -8,18 +8,26 @@ export class FreehandElement extends Element {
   constructor(options = {}) {
     super(options);
     this.type = 'freehand';
-    
+
     // Array of points {x, y} relative to element origin
     this.points = options.points || [];
-    
-    // Running bounds — updated incrementally to avoid O(n) scans on every addPoint
-    this._minX = 0;
-    this._minY = 0;
-    this._maxX = 0;
-    this._maxY = 0;
+
+    // BUG-017 fix: use proper sentinels so the very first addPoint() always
+    // updates the bounds correctly regardless of element origin offset.
+    // These are reset properly during _recomputeBounds() on hydration.
+    this._minX = Infinity;
+    this._minY = Infinity;
+    this._maxX = -Infinity;
+    this._maxY = -Infinity;
 
     if (options.points && options.points.length > 0 && options.width === undefined) {
       this._recomputeBounds(); // Full scan only on initial hydration
+    } else if (options.width !== undefined) {
+      // Already hydrated with known bounds — init sentinels from existing size
+      this._minX = 0;
+      this._minY = 0;
+      this._maxX = options.width || 1;
+      this._maxY = options.height || 1;
     }
   }
 

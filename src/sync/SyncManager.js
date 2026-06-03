@@ -11,7 +11,6 @@ import { StickyNote } from '../elements/StickyNote.js';
 import { TextElement } from '../elements/TextElement.js';
 import { Element } from '../elements/Element.js';
 import { WebRTCManager } from './WebRTCManager.js';
-// CRDTSync will be imported in Phase 4
 
 export class SyncManager {
   constructor(app, boardId, canvasManager) {
@@ -23,7 +22,7 @@ export class SyncManager {
     this.userId = user ? (user.id || user.$id || user.uid || user._id) : null;
 
     // Lamport logical clock for LWW
-    this.localClock = Date.now(); 
+    this.localClock = Date.now();
 
     // Auto-Save Queue
     this.dirtyElements = new Map();
@@ -32,12 +31,12 @@ export class SyncManager {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsHost = window.location.host;
     const url = `${wsProtocol}//${wsHost}/ws/board/${boardId}`;
-    
+
     this.ws = new WebSocketClient(url, () => this.app.auth.getAccessToken());
-    
+
     // P2P Manager
     this.p2p = new WebRTCManager(this, this.ws, this.ws.clientId);
-    
+
     // Setup Presence
     this.presenceSync = new PresenceSync(this.ws, this.cm, this.p2p);
 
@@ -47,20 +46,15 @@ export class SyncManager {
     // Track unique users for accurate UI peer count
     this.activeUsers = new Map();
 
+    // BUG-003 fix: Track recently forwarded deletes to avoid echo loops
+    this._recentlyForwardedDeletes = new Set();
+
     this._bindEvents();
     this.ws.connect();
   }
 
   get uniqueUserCount() {
     return this.activeUsers.size;
-  }
-
-  destroy() {
-    if (this._saveTimeout) clearTimeout(this._saveTimeout);
-    if (this.p2p) this.p2p.destroy();
-    if (this.ws) {
-      try { this.ws.disconnect(); } catch (_) {}
-    }
   }
 
   _tickClock(remoteTimestamp = 0) {
@@ -72,7 +66,7 @@ export class SyncManager {
     this.ws.on('connected', () => {
       // Request full sync on connection/reconnection
       this.ws.send('sync_request');
-      
+
       const indicator = document.getElementById('latency-indicator');
       if (indicator) {
         indicator.className = 'status-dot status-green';
@@ -84,7 +78,7 @@ export class SyncManager {
       this.isHost = false;
       this.activeUsers.clear();
       this._updateHostUI();
-      
+
       const indicator = document.getElementById('latency-indicator');
       if (indicator) {
         indicator.className = 'status-dot status-yellow';
@@ -92,7 +86,6 @@ export class SyncManager {
       }
 
       // In offline/solo mode, this client is implicitly the "host" for saving
-      // We set a small delay so that reconnection attempts don't fight with saves
       setTimeout(() => {
         if (!this.isHost) {
           this.isHost = true;
@@ -103,7 +96,7 @@ export class SyncManager {
 
     // Handle host assignment
     this.ws.on('host_assigned', () => {
-      console.log("[SyncManager] Received host_assigned! This client is now the designated room host.");
+      console.log('[SyncManager] Received host_assigned! This client is now the designated room host.');
       this.isHost = true;
       this._updateHostUI();
     });
@@ -153,19 +146,26 @@ export class SyncManager {
   broadcastDelete(elementId) {
     this.p2p.broadcast('element_delete', { // P2P
       elementId,
-      updatedAt: this._tickClock() 
+      updatedAt: this._tickClock()
     });
+    // BUG-003 fix: host sends to server but tracks it to avoid echo processing
     if (this.isHost) {
+      this._recentlyForwardedDeletes.add(elementId);
+      setTimeout(() => this._recentlyForwardedDeletes.delete(elementId), 5000);
       this.ws.send('element_delete', { elementId });
     }
     this.dirtyElements.delete(elementId);
-    this._scheduleAutoSave();
+    // BUG-018 fix: only schedule save if there is still something to save
+    if (this.dirtyElements.size > 0) {
+      this._scheduleAutoSave();
+    }
   }
 
   _scheduleAutoSave() {
     // Only the Host is allowed to auto-save to the backend!
     if (!this.isHost) return;
 
+    // BUG-009 fix: use consistent timer name 'autoSaveTimer'
     if (this.autoSaveTimer) {
       clearTimeout(this.autoSaveTimer);
     }
@@ -198,17 +198,17 @@ export class SyncManager {
   async forceSave() {
     // Prevent non-hosts from saving to DB to save costs and avoid conflicts
     if (!this.isHost) {
-      console.log("[SyncManager] Save request ignored: client is not the room host.");
+      console.log('[SyncManager] Save request ignored: client is not the room host.');
       return true;
     }
 
     if (this.dirtyElements.size === 0) {
-      console.log("[SyncManager] Save skipped: no dirty elements to sync.");
+      console.log('[SyncManager] Save skipped: no dirty elements to sync.');
       return true;
     }
-    
+
     console.log(`[SyncManager] Saving ${this.dirtyElements.size} dirty elements to database...`);
-    
+
     const elementsToSave = Array.from(this.dirtyElements.values());
     this.dirtyElements.clear(); // Clear immediately so new edits can be queued
 
@@ -219,7 +219,7 @@ export class SyncManager {
         body: JSON.stringify({ elements: elementsToSave }),
         keepalive: true
       });
-      
+
       if (!res.ok) {
         console.error('Auto-save failed, re-queueing elements');
         elementsToSave.forEach(el => {
@@ -287,14 +287,14 @@ export class SyncManager {
       localEl.rotation = remoteEl.rotation;
       localEl.zIndex = remoteEl.zIndex;
       localEl.style = { ...remoteEl.style };
-      
+
       // Type-specific properties
       if (remoteEl.type === 'sticky' || remoteEl.type === 'text') {
         localEl.text = remoteEl.text;
       } else if (remoteEl.type === 'freehand') {
         localEl.points = remoteEl.points;
       }
-      
+
       localEl.updatedAt = remoteEl.updatedAt;
       this.cm.requestStaticRender();
 
@@ -306,10 +306,16 @@ export class SyncManager {
   }
 
   _onRemoteDelete(msg) {
+    const elementId = msg.payload.elementId;
     this._tickClock(msg.payload.updatedAt);
-    this.em.removeElement(msg.payload.elementId);
-    if (this.isHost) {
-      this.ws.send('element_delete', { elementId: msg.payload.elementId });
+    this.em.removeElement(elementId);
+
+    // BUG-003 fix: Only forward to WS server if this wasn't one we just sent
+    // to avoid the echo loop where server broadcasts back to us
+    if (this.isHost && !this._recentlyForwardedDeletes.has(elementId)) {
+      this._recentlyForwardedDeletes.add(elementId);
+      setTimeout(() => this._recentlyForwardedDeletes.delete(elementId), 5000);
+      this.ws.send('element_delete', { elementId });
     }
   }
 
@@ -328,12 +334,14 @@ export class SyncManager {
     }
   }
 
+  // BUG-001 fix: single unified destroy() method
   destroy() {
+    // BUG-009 fix: use correct timer variable name
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     if (this.isHost && this.dirtyElements.size > 0) {
       this.forceSave(); // Fire and forget with keepalive:true
     }
     if (this.p2p) this.p2p.destroy();
-    this.ws.disconnect();
+    try { this.ws.disconnect(); } catch (_) {}
   }
 }

@@ -155,7 +155,10 @@ export class BoardPage {
       this._initTitleEditing();
     } catch (err) {
       console.error('Failed to load board:', err);
-      alert('Failed to load board: ' + err.message);
+      // BUG-016 fix: use Toast instead of blocking alert()
+      import('../ui/Toast.js').then(({ Toast }) => {
+        Toast.show('Failed to load board: ' + err.message, 'error', 5000);
+      });
       this.app.navigate('/dashboard');
     }
   }
@@ -435,17 +438,41 @@ export class BoardPage {
   _updatePresenceBar() {
     const bar = this.root.querySelector('#presence-bar');
     if (!bar || !this.sync) return;
-    // Presence data comes from WebSocket room user list (simplify: show colors from peers)
-    // We'll show a simple avatar for the local user
-    const user = this.app.auth.getUser();
-    if (!user) return;
-    const initials = (user.displayName || user.name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    const color = '#c0c1ff';
-    bar.innerHTML = `
-      <div class="presence-avatar" title="${user.displayName || user.name || 'You'} (You)" style="background:${color};">
-        ${initials}
+
+    const localUser = this.app.auth.getUser();
+    if (!localUser) return;
+
+    const localName = localUser.displayName || localUser.name || 'You';
+    const localInitials = localName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+    // BUG-012 fix: build avatars for local user AND all active remote peers
+    const colors = ['#c0c1ff', '#4cd7f6', '#ffb2b7', '#8083ff', '#03b5d3', '#ff516a'];
+    const getUserColor = (id) => {
+      let hash = 0;
+      for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+      return colors[Math.abs(hash) % colors.length];
+    };
+
+    let html = `
+      <div class="presence-avatar" title="${localName} (You)" style="background:#c0c1ff;">
+        ${localInitials}
       </div>
     `;
+
+    // Add remote peer avatars from activeUsers map
+    for (const [userId] of this.sync.activeUsers.entries()) {
+      // Skip own userId
+      if (userId === this.sync.userId) continue;
+      const color = getUserColor(userId);
+      const initial = userId.charAt(0).toUpperCase();
+      html += `
+        <div class="presence-avatar" title="Collaborator" style="background:${color};">
+          ${initial}
+        </div>
+      `;
+    }
+
+    bar.innerHTML = html;
   }
 
   _updatePeerCount() {
@@ -489,7 +516,7 @@ export class BoardPage {
     if (display) display.style.display = 'flex';
     
     let secondsLeft = 0;
-    
+
     const refreshKey = async () => {
       try {
         const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/key/refresh`, { method: 'POST' });
@@ -504,18 +531,21 @@ export class BoardPage {
     };
 
     await refreshKey();
-    
+
+    // BUG-008 fix: use a single countdown timer that also handles the refresh.
+    // The old code had both a 1s interval AND a 60s interval that could fire
+    // simultaneously, causing a double refresh at exactly the 60-second mark.
     if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
     this.keyTimerInterval = setInterval(() => {
       if (secondsLeft > 0) {
         secondsLeft--;
         if (timerLabel) timerLabel.textContent = `(${secondsLeft}s)`;
+        // BUG-008 fix: refresh when 1 second remains so the new key arrives
+        // before the display hits 0, and we no longer need keyRefreshInterval.
         if (secondsLeft === 0) refreshKey();
       }
     }, 1000);
-    
-    if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
-    this.keyRefreshInterval = setInterval(refreshKey, 60000);
+    // BUG-008 fix: removed redundant keyRefreshInterval — the 1s countdown handles all refreshes
 
     // Copy invite link
     this.root.querySelector('#copy-key-btn')?.addEventListener('click', () => {
@@ -621,18 +651,9 @@ export class BoardPage {
     });
   }
 
-  destroy() {
-    window.removeEventListener('beforeunload', this.handleBeforeUnload);
-    if (this.cm) this.cm.stopRenderLoop();
-    if (this.sync) this.sync.destroy();
-    if (this.textEditor) this.textEditor.destroy();
-    if (this.contextMenu) this.contextMenu.destroy();
-    if (this.commandPalette) this.commandPalette.destroy();
-    if (this.templateEngine) this.templateEngine.destroy();
-    if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
-    if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
-    if (this._peerCountInterval) clearInterval(this._peerCountInterval);
-  }
+  // NOTE: The authoritative destroy() is below at the end of the class.
+  // BUG-005 fix: removed the first incomplete destroy() definition that was
+  // being silently overwritten by the second one, causing canvas/textEditor leaks.
 
   _injectStyles() {
     if (document.getElementById('board-styles')) return;
@@ -753,32 +774,36 @@ export class BoardPage {
     document.head.appendChild(style);
   }
 
+  // BUG-005 fix: single unified destroy() method — stops canvas loop,
+  // tears down all managers and clears all intervals/listeners.
   destroy() {
     console.log('[BoardPage] Destroying...');
-    
+
     // Clean up intervals
     if (this._peerCountInterval) clearInterval(this._peerCountInterval);
-    
+    if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
+
     // Clean up global listeners
     if (this.handleBeforeUnload) {
       window.removeEventListener('beforeunload', this.handleBeforeUnload);
     }
-    
-    // Destroy managers (must close sockets and listeners)
-    if (this.sync) {
-      this.sync.destroy();
+
+    // Stop the canvas render loop first to prevent rendering on torn-down state
+    if (this.cm) this.cm.stopRenderLoop();
+
+    // Destroy all UI managers that own DOM nodes / window listeners
+    if (this.textEditor) this.textEditor.destroy();
+    if (this.contextMenu) this.contextMenu.destroy();
+    if (this.commandPalette) this.commandPalette.destroy();
+    if (this.templateEngine && typeof this.templateEngine.destroy === 'function') {
+      this.templateEngine.destroy();
     }
-    if (this.ih) {
-      this.ih.destroy();
-    }
-    if (this.contextMenu) {
-      this.contextMenu.destroy();
-    }
-    if (this.commandPalette) {
-      this.commandPalette.destroy();
-    }
-    
-    // Clear DOM
+
+    // Destroy network managers (closes sockets + WebRTC connections)
+    if (this.ih) this.ih.destroy();
+    if (this.sync) this.sync.destroy();
+
+    // Clear DOM last
     this.root.innerHTML = '';
   }
 }

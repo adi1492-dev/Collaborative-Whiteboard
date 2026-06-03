@@ -8,7 +8,7 @@ export class PresenceSync {
     this.cm = canvasManager;
     this.p2p = p2pManager;
     this.cursors = new Map(); // userId -> { x, y, userName, color, targetX, targetY }
-    
+
     this.lastSendTime = 0;
     this.sendThrottle = 50; // Max 20 cursor updates per second
     this.localX = 0;
@@ -21,12 +21,12 @@ export class PresenceSync {
   updateCursor(worldX, worldY) {
     this.localX = worldX;
     this.localY = worldY;
-    
+
     const now = Date.now();
     if (now - this.lastSendTime > this.sendThrottle) {
       if (this.p2p) {
         const user = this.cm.syncManager?.app.auth.getUser();
-        const userName = user ? user.displayName : 'Collaborator';
+        const userName = user ? (user.displayName || user.name || 'Collaborator') : 'Collaborator';
         const userId = user ? (user.id || user.$id || user.uid) : (this.ws?.clientId || 'unknown');
         this.p2p.broadcast('cursor_move', { x: worldX, y: worldY, userName, userId });
       } else {
@@ -46,8 +46,9 @@ export class PresenceSync {
         y: pt.y,
         targetX: pt.x,
         targetY: pt.y,
-        userName: msg.userName,
-        color: this._getUserColor(userId), // Simplified: deterministic color from ID
+        // BUG-006 fix: default to empty string so we can always safely update
+        userName: msg.userName || msg.payload?.userName || 'Collaborator',
+        color: this._getUserColor(userId),
         lastSeen: Date.now()
       });
     } else {
@@ -56,6 +57,10 @@ export class PresenceSync {
       cursor.targetX = pt.x;
       cursor.targetY = pt.y;
       cursor.lastSeen = Date.now();
+      // BUG-006 fix: always update userName in case it changed or arrived late
+      if (msg.userName || msg.payload?.userName) {
+        cursor.userName = msg.userName || msg.payload.userName;
+      }
     }
   }
 
@@ -67,10 +72,14 @@ export class PresenceSync {
     const now = Date.now();
     let hasChanges = false;
 
+    // BUG-013 fix: collect stale cursor IDs first, then delete after loop
+    // to avoid mutating the Map during iteration
+    const staleIds = [];
+
     for (const [userId, cursor] of this.cursors.entries()) {
       // Remove stale cursors (no update in 5 seconds)
       if (now - cursor.lastSeen > 5000) {
-        this.cursors.delete(userId);
+        staleIds.push(userId);
         continue;
       }
 
@@ -78,7 +87,7 @@ export class PresenceSync {
       // Move 30% of the way to the target each frame
       const dx = cursor.targetX - cursor.x;
       const dy = cursor.targetY - cursor.y;
-      
+
       if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
         cursor.x += dx * 0.3;
         cursor.y += dy * 0.3;
@@ -88,23 +97,28 @@ export class PresenceSync {
       this._drawCursor(ctx, cursor, currentScale);
     }
 
+    // BUG-013 fix: delete stale entries after iteration is complete
+    for (const id of staleIds) {
+      this.cursors.delete(id);
+    }
+
     // Since this runs in the active render loop, returning true means we need to keep rendering
     return hasChanges;
   }
 
   _drawCursor(ctx, cursor, scale) {
     ctx.save();
-    
+
     // Scale-invariant sizing
     const invScale = 1 / scale;
-    
+
     // Translate to cursor pos
     ctx.translate(cursor.x, cursor.y);
     ctx.scale(invScale, invScale); // Keep UI size constant regardless of zoom
 
     // SVG Path for an arrow pointer (Material Design 'near_me')
     const pointerPath = new Path2D("M21.41 11.58l-15-7A1 1 0 0 0 5 5.53v15a1 1 0 0 0 1.7.7l4.3-4.3 2.1 4.2a1 1 0 0 0 1.35.45l2.67-1.34a1 1 0 0 0 .45-1.34l-2.1-4.2 4.67-.8a1 1 0 0 0 .27-1.72z");
-    
+
     // Draw shadow
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.translate(1, 2);
@@ -120,19 +134,20 @@ export class PresenceSync {
 
     // Draw name tag
     ctx.font = '500 11px "Geist", sans-serif';
-    const textWidth = ctx.measureText(cursor.userName).width;
-    
+    const label = cursor.userName || 'Collaborator';
+    const textWidth = ctx.measureText(label).width;
+
     // Tag background
     ctx.fillStyle = cursor.color;
     ctx.beginPath();
     ctx.roundRect(14, 20, textWidth + 12, 18, 4);
     ctx.fill();
-    
+
     // Tag text
-    ctx.fillStyle = '#ffffff'; // Assuming dark color, standardizing for simplicity
+    ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(cursor.userName, 14 + (textWidth + 12)/2, 20 + 9);
+    ctx.fillText(label, 14 + (textWidth + 12) / 2, 20 + 9);
 
     ctx.restore();
   }
