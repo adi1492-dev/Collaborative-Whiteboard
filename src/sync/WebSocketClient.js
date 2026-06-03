@@ -20,11 +20,20 @@ export class WebSocketClient {
   connect() {
     if (this.isConnected || this.isConnecting) return;
     
+    const token = typeof this.tokenGetter === 'function' ? this.tokenGetter() : this.tokenGetter;
+    
+    // Don't attempt connection without a valid token
+    if (!token || token === 'null' || token === 'undefined') {
+      console.warn('[WS] No auth token available, skipping WebSocket connection. Will retry when token is available.');
+      // Emit disconnected so SyncManager enables local/host mode
+      setTimeout(() => this._emit('disconnected', { code: 4401, reason: 'No auth token' }), 0);
+      return;
+    }
+    
     this.isConnecting = true;
     this.intentionallyClosed = false;
     
     try {
-      const token = typeof this.tokenGetter === 'function' ? this.tokenGetter() : this.tokenGetter;
       const url = `${this.baseUrl}?token=${encodeURIComponent(token)}&clientId=${this.clientId}`;
       this.ws = new WebSocket(url);
       

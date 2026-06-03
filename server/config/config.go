@@ -11,7 +11,6 @@ import (
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
 	Port           string
-	MongoURI       string
 	JWTSecret      string
 	AuthPepper     string
 	GeminiAPIKey   string
@@ -19,6 +18,8 @@ type Config struct {
 	UploadDir      string
 	MaxUploadSize  int64
 	WebRTCEnabled  bool
+	TursoURL       string
+	TursoToken     string
 }
 
 // Global application config (initialized once at startup).
@@ -30,7 +31,6 @@ func Load() {
 	_ = godotenv.Load()
 
 	port := getEnv("PORT", "3001")
-	mongoURI := getEnv("MONGODB_URI", "mongodb://localhost:27017/canvasflow")
 	jwtSecret := getEnv("JWT_SECRET", "")
 	authPepper := getEnv("AUTH_PEPPER", "")
 	geminiKey := getEnv("GEMINI_API_KEY", "")
@@ -59,7 +59,6 @@ func Load() {
 
 	AppConfig = &Config{
 		Port:          port,
-		MongoURI:      mongoURI,
 		JWTSecret:     jwtSecret,
 		AuthPepper:    authPepper,
 		GeminiAPIKey:  geminiKey,
@@ -67,11 +66,13 @@ func Load() {
 		UploadDir:     uploadDir,
 		MaxUploadSize: maxUpload,
 		WebRTCEnabled: webrtcEnabled,
+		TursoURL:      getEnv("TURSO_DATABASE_URL", ""),
+		TursoToken:    getEnv("TURSO_AUTH_TOKEN", ""),
 	}
 
-	log.Printf("✅ Config loaded: port=%s, mongo=%s, gemini=%s, webrtc=%v",
+	log.Printf("✅ Config loaded: port=%s, turso=%v, gemini=%s, webrtc=%v",
 		AppConfig.Port,
-		maskURI(AppConfig.MongoURI),
+		AppConfig.TursoURL != "",
 		boolStr(AppConfig.GeminiAPIKey != "", "configured", "not set"),
 		AppConfig.WebRTCEnabled,
 	)
@@ -82,13 +83,6 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func maskURI(uri string) string {
-	if len(uri) > 30 {
-		return uri[:20] + "..."
-	}
-	return uri
 }
 
 func boolStr(cond bool, t, f string) string {

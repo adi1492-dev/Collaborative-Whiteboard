@@ -7,7 +7,8 @@ export class ShapeElement extends Element {
   constructor(options = {}) {
     super(options);
     this.type = 'shape';
-    this.shapeType = options.shapeType || 'rectangle'; // rectangle, ellipse, line, arrow
+    this.shapeType = options.shapeType || 'rectangle';
+    this.text = options.text || '';
   }
 
   render(ctx) {
@@ -100,6 +101,46 @@ export class ShapeElement extends Element {
         }
         break;
     }
+
+    // Render text label if present
+    if (this.text && this.shapeType !== 'line' && this.shapeType !== 'arrow') {
+      this._renderText(ctx);
+    }
+  }
+
+  _renderText(ctx) {
+    const fontSize = this.style.fontSize || 14;
+    const fontFamily = this.style.fontFamily || 'Inter, sans-serif';
+    ctx.save();
+    ctx.font = `${fontSize}px ${fontFamily}`;
+    ctx.fillStyle = this.style.textColor || this.style.strokeColor || '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 1;
+    const cx = this.x + this.width / 2;
+    const cy = this.y + this.height / 2;
+    // Word wrap for small shapes
+    const maxWidth = this.width - 16;
+    const words = (this.text || '').split(' ');
+    let line = '';
+    const lines = [];
+    for (const word of words) {
+      const testLine = line ? line + ' ' + word : word;
+      if (ctx.measureText(testLine).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = testLine;
+      }
+    }
+    lines.push(line);
+    const lineHeight = fontSize * 1.3;
+    const totalHeight = lineHeight * lines.length;
+    const startY = cy - totalHeight / 2 + lineHeight / 2;
+    lines.forEach((l, i) => {
+      ctx.fillText(l, cx, startY + i * lineHeight);
+    });
+    ctx.restore();
   }
 
   _drawArrowHead(ctx, x1, y1, x2, y2) {
@@ -117,6 +158,7 @@ export class ShapeElement extends Element {
   toJSON() {
     const data = super.toJSON();
     data.shapeType = this.shapeType;
+    data.text = this.text;
     return data;
   }
 }

@@ -22,22 +22,12 @@ func main() {
 	// Load configuration
 	config.Load()
 
-	// Connect to MongoDB
-	if err := database.Connect(config.AppConfig.MongoURI); err != nil {
-		log.Printf("⚠️  MongoDB connection failed: %v", err)
-		log.Println("🔄 Running without database (in-memory mode)")
-	}
-	defer database.Disconnect()
-
 	// Initialize SQLite Fallback DB
 	if err := database.InitSQLite("./offline_queue.db"); err != nil {
-		log.Printf("⚠️  SQLite fallback DB failed to initialize: %v", err)
+		log.Printf("⚠️  SQLite/Turso DB failed to initialize: %v", err)
 	} else {
 		defer database.CloseSQLite()
 	}
-
-	// Start Background Sync Worker for HA
-	database.StartBackgroundSyncWorker()
 
 	// Create WebSocket Hub
 	hub := ws.NewHub()
@@ -55,22 +45,6 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
-
-	// Database Connection Check Middleware
-	router.Use(func(c *gin.Context) {
-		// Exclude health check and assets from DB check
-		if c.Request.URL.Path == "/api/health" || c.Request.URL.Path == "/assets" {
-			c.Next()
-			return
-		}
-		if !database.IsConnected() {
-			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
-				"error": "MongoDB is not running locally. Please start a MongoDB server on port 27017 or update MONGODB_URI in .env",
-			})
-			return
-		}
-		c.Next()
-	})
 
 	// Health check
 	router.GET("/api/health", func(c *gin.Context) {

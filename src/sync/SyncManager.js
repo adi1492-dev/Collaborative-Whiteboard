@@ -71,9 +71,18 @@ export class SyncManager {
       
       const indicator = document.getElementById('latency-indicator');
       if (indicator) {
-        indicator.className = 'status-dot status-red';
-        indicator.title = 'Disconnected (Reconnecting...)';
+        indicator.className = 'status-dot status-yellow';
+        indicator.title = 'Offline (Local Mode — saves still work)';
       }
+
+      // In offline/solo mode, this client is implicitly the "host" for saving
+      // We set a small delay so that reconnection attempts don't fight with saves
+      setTimeout(() => {
+        if (!this.isHost) {
+          this.isHost = true;
+          this._updateHostUI();
+        }
+      }, 3000);
     });
 
     // Handle host assignment

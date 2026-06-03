@@ -11,6 +11,8 @@ import { Toolbar } from '../ui/Toolbar.js';
 import { PropertyPanel } from '../ui/PropertyPanel.js';
 import { TextEditor } from '../ui/TextEditor.js';
 import { ContextMenu } from '../ui/ContextMenu.js';
+import { CommandPalette } from '../ui/CommandPalette.js';
+import { TemplateEngine } from '../plugins/templates/TemplateEngine.js';
 import { AIManager } from '../ai/AIManager.js';
 import { HistoryManager } from '../history/HistoryManager.js';
 import { ExportManager } from '../export/ExportManager.js';
@@ -108,6 +110,11 @@ export class BoardPage {
             <!-- AI Assist -->
             <button class="btn btn-ghost ai-assist-btn" id="ai-assist-btn" style="color:var(--tertiary);padding:6px 12px;height:auto;">
               <span class="material-symbols-outlined" style="font-size:16px;margin-right:4px;">auto_awesome</span>AI
+            </button>
+
+            <!-- Templates -->
+            <button class="btn btn-outline" id="templates-btn" style="padding:6px 12px;height:auto;">
+              <span class="material-symbols-outlined" style="font-size:16px;margin-right:4px;">view_cozy</span>Templates
             </button>
 
             <!-- Export -->
@@ -212,6 +219,15 @@ export class BoardPage {
     this.ai = new AIManager(this.app, this);
     this.root.querySelector('#ai-assist-btn')?.addEventListener('click', () => {
       this.ai.summarizeBoard();
+    });
+
+    // 11.5 Command Palette
+    this.commandPalette = new CommandPalette(this, this.ih, this.cm);
+
+    // 11.6 Template Engine
+    this.templateEngine = new TemplateEngine(this);
+    this.root.querySelector('#templates-btn')?.addEventListener('click', () => {
+      this.templateEngine.open();
     });
 
     // Dynamic property panel
@@ -392,7 +408,7 @@ export class BoardPage {
         if (newTitle !== current) {
           try {
             await this.app.auth.apiFetch(`/api/boards/${this.boardId}`, {
-              method: 'PATCH',
+              method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ title: newTitle })
             });
@@ -440,65 +456,70 @@ export class BoardPage {
 
   async _initRoomKey() {
     const user = this.app.auth.getUser();
-    if (!user) return;
+    if (!user || !this.boardData) return;
     
-    const userId = user._id || user.id;
-    const getUserIdStr = (id) => {
+    const userId = user._id || user.id || '';
+    
+    // Handle both string IDs (SQLite) and MongoDB ObjectID objects
+    const getIdStr = (id) => {
       if (!id) return '';
       if (typeof id === 'string') return id;
       if (id.$oid) return id.$oid;
       return String(id);
     };
 
-    const ownerIdStr = getUserIdStr(this.boardData.ownerId);
-    const userIdStr = getUserIdStr(userId);
+    const ownerIdStr = getIdStr(this.boardData.ownerId);
+    const userIdStr = getIdStr(userId);
 
-    if (ownerIdStr && userIdStr && ownerIdStr === userIdStr) {
-      const display = this.root.querySelector('#room-key-display');
-      const text = this.root.querySelector('#room-key-text');
-      const timerLabel = this.root.querySelector('#room-key-timer');
-      
-      if (display) display.style.display = 'flex';
-      
-      let secondsLeft = 0;
-      
-      const refreshKey = async () => {
-        try {
-          const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/key/refresh`, { method: 'POST' });
-          if (res.ok) {
-            const data = await res.json();
-            if (text) text.textContent = data.roomKey;
-            secondsLeft = 60;
-          }
-        } catch (err) {
-          console.error('Failed to refresh room key', err);
-        }
-      };
+    // Show room key for owner
+    const isOwner = ownerIdStr && userIdStr && ownerIdStr === userIdStr;
+    if (!isOwner) return;
 
-      await refreshKey();
-      
-      if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
-      this.keyTimerInterval = setInterval(() => {
-        if (secondsLeft > 0) {
-          secondsLeft--;
-          if (timerLabel) timerLabel.textContent = `(${secondsLeft}s)`;
+    const display = this.root.querySelector('#room-key-display');
+    const text = this.root.querySelector('#room-key-text');
+    const timerLabel = this.root.querySelector('#room-key-timer');
+    
+    if (display) display.style.display = 'flex';
+    
+    let secondsLeft = 0;
+    
+    const refreshKey = async () => {
+      try {
+        const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/key/refresh`, { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          if (text) text.textContent = data.roomKey;
+          secondsLeft = 60;
         }
-      }, 1000);
-      
-      if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
-      this.keyRefreshInterval = setInterval(refreshKey, 60000);
+      } catch (err) {
+        console.error('Failed to refresh room key', err);
+      }
+    };
 
-      // Copy invite link
-      this.root.querySelector('#copy-key-btn')?.addEventListener('click', () => {
-        const key = text?.textContent?.trim();
-        if (key) {
-          const url = `${window.location.origin}${window.location.pathname}#/join/${key}`;
-          navigator.clipboard.writeText(url).then(() => {
-            Toast.show('Invite link copied to clipboard!', 'success', 2500);
-          });
-        }
-      });
-    }
+    await refreshKey();
+    
+    if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
+    this.keyTimerInterval = setInterval(() => {
+      if (secondsLeft > 0) {
+        secondsLeft--;
+        if (timerLabel) timerLabel.textContent = `(${secondsLeft}s)`;
+        if (secondsLeft === 0) refreshKey();
+      }
+    }, 1000);
+    
+    if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
+    this.keyRefreshInterval = setInterval(refreshKey, 60000);
+
+    // Copy invite link
+    this.root.querySelector('#copy-key-btn')?.addEventListener('click', () => {
+      const key = text?.textContent?.trim();
+      if (key) {
+        const url = `${window.location.origin}${window.location.pathname}#/join/${key}`;
+        navigator.clipboard.writeText(url).then(() => {
+          Toast.show('Invite link copied to clipboard!', 'success', 2500);
+        });
+      }
+    });
   }
 
   destroy() {
@@ -507,6 +528,8 @@ export class BoardPage {
     if (this.sync) this.sync.destroy();
     if (this.textEditor) this.textEditor.destroy();
     if (this.contextMenu) this.contextMenu.destroy();
+    if (this.commandPalette) this.commandPalette.destroy();
+    if (this.templateEngine) this.templateEngine.destroy();
     if (this.keyRefreshInterval) clearInterval(this.keyRefreshInterval);
     if (this.keyTimerInterval) clearInterval(this.keyTimerInterval);
     if (this._peerCountInterval) clearInterval(this._peerCountInterval);

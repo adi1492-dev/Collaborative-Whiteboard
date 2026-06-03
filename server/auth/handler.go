@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -12,8 +11,7 @@ import (
 	"github.com/canvasflow/server/database"
 	"github.com/canvasflow/server/models"
 	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 )
 
 // Pre-defined avatar colors for new users.
@@ -58,19 +56,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Check if email already exists
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	count, err := database.Users().CountDocuments(ctx, bson.M{"email": req.Email})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
-		return
-	}
-	if count > 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
-		return
-	}
+	avatarColor := avatarColors[rand.Intn(len(avatarColors))]
 
 	// Hash password with Argon2id
 	hash, salt, err := HashPassword(req.Password, config.AppConfig.AuthPepper)
@@ -79,50 +65,39 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Create user
-	now := time.Now()
-	user := models.User{
-		Email:        req.Email,
-		DisplayName:  req.DisplayName,
-		AvatarColor:  avatarColors[rand.Intn(len(avatarColors))],
-		PasswordHash: hash,
-		PasswordSalt: salt,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+	userID := uuid.New().String()
+
+	if database.SQLiteUserExists(req.Email) {
+		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
+		return
 	}
 
-	result, err := database.Users().InsertOne(ctx, user)
-	if err != nil {
+	if err := database.SQLiteCreateUser(userID, req.Email, req.DisplayName, avatarColor, hash, salt); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
 
-	user.ID = result.InsertedID.(primitive.ObjectID)
-
-	// Generate tokens
-	accessToken, err := GenerateAccessToken(user.ID.Hex(), user.Email, user.DisplayName)
+	accessToken, err := GenerateAccessToken(userID, req.Email, req.DisplayName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
 	}
-
 	rawRefresh, refreshHash, err := GenerateRefreshToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate refresh token"})
 		return
 	}
 
-	// Store refresh token hash
-	refreshDoc := models.RefreshToken{
-		UserID:    user.ID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
-		CreatedAt: time.Now(),
-	}
-	_, _ = database.RefreshTokens().InsertOne(ctx, refreshDoc)
+	tokenID := uuid.New().String()
+	_ = database.SQLiteStoreRefreshToken(tokenID, userID, refreshHash, time.Now().Add(7*24*time.Hour))
 
 	c.JSON(http.StatusCreated, AuthResponse{
-		User:         user.ToResponse(),
+		User: models.UserResponse{
+			ID:          userID,
+			Email:       req.Email,
+			DisplayName: req.DisplayName,
+			AvatarColor: avatarColor,
+		},
 		AccessToken:  accessToken,
 		RefreshToken: rawRefresh,
 	})
@@ -136,47 +111,38 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Find user by email
-	var user models.User
-	err := database.Users().FindOne(ctx, bson.M{"email": req.Email}).Decode(&user)
+	user, err := database.SQLiteFindUserByEmail(req.Email)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		return
 	}
 
-	// Verify password (constant-time comparison)
 	if !VerifyPassword(req.Password, config.AppConfig.AuthPepper, user.PasswordHash, user.PasswordSalt) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		return
 	}
 
-	// Generate tokens
-	accessToken, err := GenerateAccessToken(user.ID.Hex(), user.Email, user.DisplayName)
+	accessToken, err := GenerateAccessToken(user.ID, user.Email, user.DisplayName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
 	}
-
 	rawRefresh, refreshHash, err := GenerateRefreshToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate refresh token"})
 		return
 	}
 
-	// Store refresh token hash
-	refreshDoc := models.RefreshToken{
-		UserID:    user.ID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
-		CreatedAt: time.Now(),
-	}
-	_, _ = database.RefreshTokens().InsertOne(ctx, refreshDoc)
+	tokenID := uuid.New().String()
+	_ = database.SQLiteStoreRefreshToken(tokenID, user.ID, refreshHash, time.Now().Add(7*24*time.Hour))
 
 	c.JSON(http.StatusOK, AuthResponse{
-		User:         user.ToResponse(),
+		User: models.UserResponse{
+			ID:          user.ID,
+			Email:       user.Email,
+			DisplayName: user.DisplayName,
+			AvatarColor: user.AvatarColor,
+		},
 		AccessToken:  accessToken,
 		RefreshToken: rawRefresh,
 	})
@@ -192,51 +158,37 @@ func RefreshTokenHandler(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Hash the provided token and look it up
 	tokenHash := HashRefreshToken(req.RefreshToken)
 
-	var storedToken models.RefreshToken
-	err := database.RefreshTokens().FindOne(ctx, bson.M{"tokenHash": tokenHash}).Decode(&storedToken)
+	storedToken, err := database.SQLiteFindRefreshToken(tokenHash)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid refresh token"})
 		return
 	}
-
-	// Check expiry
 	if time.Now().After(storedToken.ExpiresAt) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Refresh token expired"})
 		return
 	}
+	_ = database.SQLiteDeleteRefreshToken(tokenHash)
 
-	// Delete the used refresh token (rotation)
-	_, _ = database.RefreshTokens().DeleteOne(ctx, bson.M{"_id": storedToken.ID})
-
-	// Fetch user
-	var user models.User
-	err = database.Users().FindOne(ctx, bson.M{"_id": storedToken.UserID}).Decode(&user)
+	user, err := database.SQLiteFindUserByID(storedToken.UserID)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
 		return
 	}
 
-	// Generate new token pair
-	accessToken, _ := GenerateAccessToken(user.ID.Hex(), user.Email, user.DisplayName)
+	accessToken, _ := GenerateAccessToken(user.ID, user.Email, user.DisplayName)
 	rawRefresh, refreshHash, _ := GenerateRefreshToken()
-
-	// Store new refresh token
-	refreshDoc := models.RefreshToken{
-		UserID:    user.ID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
-		CreatedAt: time.Now(),
-	}
-	_, _ = database.RefreshTokens().InsertOne(ctx, refreshDoc)
+	tokenID := uuid.New().String()
+	_ = database.SQLiteStoreRefreshToken(tokenID, user.ID, refreshHash, time.Now().Add(7*24*time.Hour))
 
 	c.JSON(http.StatusOK, AuthResponse{
-		User:         user.ToResponse(),
+		User: models.UserResponse{
+			ID:          user.ID,
+			Email:       user.Email,
+			DisplayName: user.DisplayName,
+			AvatarColor: user.AvatarColor,
+		},
 		AccessToken:  accessToken,
 		RefreshToken: rawRefresh,
 	})
@@ -248,13 +200,9 @@ func Logout(c *gin.Context) {
 		RefreshToken string `json:"refreshToken"`
 	}
 	if err := c.ShouldBindJSON(&req); err == nil && req.RefreshToken != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
 		tokenHash := HashRefreshToken(req.RefreshToken)
-		_, _ = database.RefreshTokens().DeleteOne(ctx, bson.M{"tokenHash": tokenHash})
+		_ = database.SQLiteDeleteRefreshToken(tokenHash)
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out"})
 }
 
@@ -262,23 +210,17 @@ func Logout(c *gin.Context) {
 func Me(c *gin.Context) {
 	userID := GetUserID(c)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	objID, err := primitive.ObjectIDFromHex(userID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
-		return
-	}
-
-	var user models.User
-	err = database.Users().FindOne(ctx, bson.M{"_id": objID}).Decode(&user)
+	user, err := database.SQLiteFindUserByID(userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"user": user.ToResponse()})
+	c.JSON(http.StatusOK, gin.H{"user": models.UserResponse{
+		ID:          user.ID,
+		Email:       user.Email,
+		DisplayName: user.DisplayName,
+		AvatarColor: user.AvatarColor,
+	}})
 }
 
 func init() {

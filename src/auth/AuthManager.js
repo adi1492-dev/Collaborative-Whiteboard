@@ -50,7 +50,7 @@ export class AuthManager {
     });
 
     if (!res.ok) {
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       throw new Error(data.error || 'Registration failed');
     }
 
@@ -70,7 +70,7 @@ export class AuthManager {
     });
 
     if (!res.ok) {
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       throw new Error(data.error || 'Login failed');
     }
 
@@ -143,7 +143,6 @@ export class AuthManager {
    * Make an authenticated API call with automatic token refresh.
    */
   async apiFetch(url, options = {}) {
-    // Try the call
     const headers = { ...this.getAuthHeaders(), ...options.headers };
     let res = await fetch(url, { ...options, headers });
 

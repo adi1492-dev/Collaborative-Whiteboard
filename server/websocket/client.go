@@ -187,14 +187,12 @@ func (c *Client) writePump() {
 func (c *Client) handleMessage(msg Message) {
 	switch msg.Type {
 	case "element_create", "element_update", "element_reorder":
-		// Save to HA Dual-Database
+		// Save to Database
 		var element map[string]interface{}
 		if err := json.Unmarshal(msg.Payload, &element); err == nil {
-			element["boardId"] = c.BoardID
-			if id, ok := element["id"]; ok {
-				element["elementId"] = id
+			if id, ok := element["id"].(string); ok && id != "" {
+				_ = database.SQLiteSaveElement(c.BoardID, id, element)
 			}
-			database.SafeSaveElement(element)
 		}
 		
 		// Broadcast element operations to all other clients in the room
@@ -206,8 +204,8 @@ func (c *Client) handleMessage(msg Message) {
 		var payload struct {
 			ElementID string `json:"elementId"`
 		}
-		if err := json.Unmarshal(msg.Payload, &payload); err == nil {
-			database.SafeDeleteElement(c.BoardID, payload.ElementID)
+		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.ElementID != "" {
+			_ = database.SQLiteDeleteElement(c.BoardID, payload.ElementID)
 		}
 		if c.Room != nil {
 			c.Room.Broadcast(msg, c)
