@@ -1,9 +1,10 @@
 [build]
-builder = "NIXPACKS"
-buildCommand = "cd server && go build -o server ."
+# Use the Dockerfile in server/ — bypasses Nixpacks Node.js auto-detection
+builder = "DOCKERFILE"
+dockerfilePath = "server/Dockerfile"
 
 [deploy]
-startCommand = "cd server && ./server"
+startCommand = "./server"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
