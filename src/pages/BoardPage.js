@@ -48,6 +48,10 @@ export class BoardPage {
     this.app = app;
     this.boardId = boardId;
     this.boardData = null;
+    // Lifecycle guard: set to true by destroy() so any in-flight async
+    // operations (like the board API fetch) bail out before creating
+    // managers that would never be cleaned up.
+    this._destroyed = false;
     this.render();
   }
 
@@ -146,14 +150,25 @@ export class BoardPage {
 
     try {
       const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}`);
+
+      // Guard: user may have navigated away while the fetch was in flight.
+      // If destroyed, do NOT create InputHandler/SyncManager — their window
+      // listeners would never be removed, causing ghost cursor/connection leaks.
+      if (this._destroyed) return;
+
       if (!res.ok) throw new Error('Board not found');
       const data = await res.json();
+
+      // Second guard after the second await (json parsing)
+      if (this._destroyed) return;
+
       this.boardData = data.board;
       this.root.querySelector('#board-title').textContent = this.boardData.title;
       this._initEngine(data.elements || []);
       this._initRoomKey();
       this._initTitleEditing();
     } catch (err) {
+      if (this._destroyed) return; // Suppress errors after navigation
       console.error('Failed to load board:', err);
       // BUG-016 fix: use Toast instead of blocking alert()
       import('../ui/Toast.js').then(({ Toast }) => {
@@ -498,6 +513,7 @@ export class BoardPage {
   }
 
   async _initRoomKey() {
+    if (this._destroyed) return;
     const user = this.app.auth.getUser();
     if (!user || !this.boardData) return;
     
@@ -527,6 +543,7 @@ export class BoardPage {
     let secondsLeft = 0;
 
     const refreshKey = async () => {
+      if (this._destroyed) return; // Don't refresh after navigating away
       try {
         const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/key/refresh`, { method: 'POST' });
         if (res.ok) {
@@ -783,10 +800,15 @@ export class BoardPage {
     document.head.appendChild(style);
   }
 
-  // BUG-005 fix: single unified destroy() method — stops canvas loop,
-  // tears down all managers and clears all intervals/listeners.
+  // Lifecycle: marks this page as destroyed and tears down all managers.
+  // MUST set _destroyed first so any in-flight async render() calls abort.
   destroy() {
     console.log('[BoardPage] Destroying...');
+
+    // Set destroyed flag IMMEDIATELY — this is the critical line.
+    // Any pending async operations in render() will check this and bail out
+    // before creating InputHandler / SyncManager, preventing ghost connections.
+    this._destroyed = true;
 
     // Clean up intervals
     if (this._peerCountInterval) clearInterval(this._peerCountInterval);
@@ -808,11 +830,11 @@ export class BoardPage {
       this.templateEngine.destroy();
     }
 
-    // Destroy network managers (closes sockets + WebRTC connections)
+    // Destroy network managers last (closes sockets + WebRTC connections)
     if (this.ih) this.ih.destroy();
     if (this.sync) this.sync.destroy();
 
-    // Clear DOM last
+    // Clear DOM
     this.root.innerHTML = '';
   }
 }
