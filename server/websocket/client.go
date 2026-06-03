@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/canvasflow/server/auth"
+	"github.com/canvasflow/server/database"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -193,6 +194,14 @@ func (c *Client) handleMessage(msg Message) {
 		// Client requesting full state (on reconnect)
 		// TODO: Send full board state from DB
 		log.Printf("Sync request from %s in room %s", c.UserName, c.BoardID)
+
+	case "element_delete":
+		var payload struct {
+			ElementID string `json:"elementId"`
+		}
+		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.ElementID != "" {
+			_ = database.SQLiteDeleteElement(c.BoardID, payload.ElementID)
+		}
 
 	default:
 		log.Printf("Unknown message type: %s from %s", msg.Type, c.UserName)

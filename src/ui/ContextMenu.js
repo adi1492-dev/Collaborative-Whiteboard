@@ -155,12 +155,15 @@ export class ContextMenu {
   }
 
   _bindDismiss() {
-    document.addEventListener('pointerdown', (e) => {
-      if (!this._el.contains(e.target)) this.hide();
-    });
-    document.addEventListener('keydown', (e) => {
+    this._boundPointerDown = (e) => {
+      if (this._el && !this._el.contains(e.target)) this.hide();
+    };
+    this._boundKeyDown = (e) => {
       if (e.key === 'Escape') this.hide();
-    });
+    };
+    
+    document.addEventListener('pointerdown', this._boundPointerDown);
+    document.addEventListener('keydown', this._boundKeyDown);
   }
 
   _injectStyles() {
@@ -184,6 +187,10 @@ export class ContextMenu {
   }
 
   destroy() {
-    this._el.remove();
+    if (this._boundPointerDown) document.removeEventListener('pointerdown', this._boundPointerDown);
+    if (this._boundKeyDown) document.removeEventListener('keydown', this._boundKeyDown);
+    if (this._el && this._el.parentNode) {
+      this._el.parentNode.removeChild(this._el);
+    }
   }
 }

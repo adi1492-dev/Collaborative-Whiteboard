@@ -37,19 +37,34 @@ export class InputHandler {
   }
 
   _bindEvents() {
+    this._boundPointerDown = this._onPointerDown.bind(this);
+    this._boundPointerMove = this._onPointerMove.bind(this);
+    this._boundPointerUp = this._onPointerUp.bind(this);
+    this._boundContextMenu = this._onContextMenu.bind(this);
+    this._boundWheel = this._onWheel.bind(this);
+    this._boundKeyDown = this._onKeyDown.bind(this);
+    this._boundKeyUp = this._onKeyUp.bind(this);
+
     const container = this.cm.container;
+    container.addEventListener('pointerdown', this._boundPointerDown);
+    window.addEventListener('pointermove', this._boundPointerMove);
+    window.addEventListener('pointerup', this._boundPointerUp);
+    container.addEventListener('contextmenu', this._boundContextMenu);
+    container.addEventListener('wheel', this._boundWheel, { passive: false });
+    window.addEventListener('keydown', this._boundKeyDown);
+    window.addEventListener('keyup', this._boundKeyUp);
+  }
 
-    container.addEventListener('pointerdown', this._onPointerDown.bind(this));
-    window.addEventListener('pointermove', this._onPointerMove.bind(this));
-    window.addEventListener('pointerup', this._onPointerUp.bind(this));
-    
-    // Prevent default context menu; show custom one
-    container.addEventListener('contextmenu', this._onContextMenu.bind(this));
-
-    container.addEventListener('wheel', this._onWheel.bind(this), { passive: false });
-
-    window.addEventListener('keydown', this._onKeyDown.bind(this));
-    window.addEventListener('keyup', this._onKeyUp.bind(this));
+  destroy() {
+    if (!this.cm || !this.cm.container) return;
+    const container = this.cm.container;
+    container.removeEventListener('pointerdown', this._boundPointerDown);
+    window.removeEventListener('pointermove', this._boundPointerMove);
+    window.removeEventListener('pointerup', this._boundPointerUp);
+    container.removeEventListener('contextmenu', this._boundContextMenu);
+    container.removeEventListener('wheel', this._boundWheel);
+    window.removeEventListener('keydown', this._boundKeyDown);
+    window.removeEventListener('keyup', this._boundKeyUp);
   }
 
   _onContextMenu(e) {

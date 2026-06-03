@@ -27,7 +27,8 @@ export class PresenceSync {
       if (this.p2p) {
         const user = this.cm.syncManager?.app.auth.getUser();
         const userName = user ? user.displayName : 'Collaborator';
-        this.p2p.broadcast('cursor_move', { x: worldX, y: worldY, userName });
+        const userId = user ? (user.id || user.$id || user.uid) : (this.ws?.clientId || 'unknown');
+        this.p2p.broadcast('cursor_move', { x: worldX, y: worldY, userName, userId });
       } else {
         this.ws.send('cursor_move', { x: worldX, y: worldY });
       }

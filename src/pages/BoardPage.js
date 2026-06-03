@@ -449,13 +449,15 @@ export class BoardPage {
   }
 
   _updatePeerCount() {
-    if (!this.sync?.p2p) return;
-    const count = this.sync.p2p.connectedPeerCount;
+    if (!this.sync) return;
+    const count = this.sync.uniqueUserCount;
+    // Add 1 to include the local user in the total count
+    const totalPeople = count + 1;
     const badge = document.getElementById('peer-count');
     const num = document.getElementById('peer-count-num');
     if (badge && num) {
-      num.textContent = count;
-      badge.style.display = count > 0 ? 'flex' : 'none';
+      num.textContent = totalPeople;
+      badge.style.display = totalPeople > 1 ? 'flex' : 'none';
     }
   }
 
@@ -749,5 +751,34 @@ export class BoardPage {
       }
     `;
     document.head.appendChild(style);
+  }
+
+  destroy() {
+    console.log('[BoardPage] Destroying...');
+    
+    // Clean up intervals
+    if (this._peerCountInterval) clearInterval(this._peerCountInterval);
+    
+    // Clean up global listeners
+    if (this.handleBeforeUnload) {
+      window.removeEventListener('beforeunload', this.handleBeforeUnload);
+    }
+    
+    // Destroy managers (must close sockets and listeners)
+    if (this.sync) {
+      this.sync.destroy();
+    }
+    if (this.ih) {
+      this.ih.destroy();
+    }
+    if (this.contextMenu) {
+      this.contextMenu.destroy();
+    }
+    if (this.commandPalette) {
+      this.commandPalette.destroy();
+    }
+    
+    // Clear DOM
+    this.root.innerHTML = '';
   }
 }

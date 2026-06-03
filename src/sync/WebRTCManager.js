@@ -92,6 +92,15 @@ export class WebRTCManager {
 
   // --- WebRTC Signaling ---
 
+  destroy() {
+    for (const peerId of this.peers.keys()) {
+      this._cleanupPeer(peerId);
+    }
+    this.peers.clear();
+    this.dataChannels.clear();
+    this.iceQueues.clear();
+  }
+
   _createPeerConnection(peerId) {
     const pc = new RTCPeerConnection({
       iceServers: [
@@ -248,7 +257,7 @@ export class WebRTCManager {
   _handleDataChannelMessage(peerId, msg) {
     // Inject peer info so handlers know the source
     msg.clientId = peerId;
-    msg.userId = peerId; // keep userId alias for PresenceSync compatibility
+    msg.userId = msg.payload?.userId || peerId; // Use true userId if available
     
     switch (msg.type) {
       case 'element_create':

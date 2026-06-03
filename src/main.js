@@ -35,6 +35,15 @@ class App {
     const hash = window.location.hash.slice(1) || '/';
     const path = hash.split('?')[0];
 
+    // Cleanup previous page if it has a destroy method
+    if (this.currentPage && typeof this.currentPage.destroy === 'function') {
+      try {
+        this.currentPage.destroy();
+      } catch (err) {
+        console.error('Error destroying previous page:', err);
+      }
+    }
+
     // Clear current page
     this.root.innerHTML = '';
 

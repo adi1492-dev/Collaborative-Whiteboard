@@ -20,7 +20,7 @@ export class SyncManager {
     this.cm = canvasManager;
     this.em = canvasManager.elementManager;
     const user = app.auth.getUser();
-    this.userId = user ? (user.id || user._id) : null;
+    this.userId = user ? (user.id || user.$id || user.uid || user._id) : null;
 
     // Lamport logical clock for LWW
     this.localClock = Date.now(); 
@@ -44,8 +44,23 @@ export class SyncManager {
     // Host status for saving
     this.isHost = false;
 
+    // Track unique users for accurate UI peer count
+    this.activeUsers = new Map();
+
     this._bindEvents();
     this.ws.connect();
+  }
+
+  get uniqueUserCount() {
+    return this.activeUsers.size;
+  }
+
+  destroy() {
+    if (this._saveTimeout) clearTimeout(this._saveTimeout);
+    if (this.p2p) this.p2p.destroy();
+    if (this.ws) {
+      try { this.ws.disconnect(); } catch (_) {}
+    }
   }
 
   _tickClock(remoteTimestamp = 0) {
@@ -67,6 +82,7 @@ export class SyncManager {
 
     this.ws.on('disconnected', () => {
       this.isHost = false;
+      this.activeUsers.clear();
       this._updateHostUI();
       
       const indicator = document.getElementById('latency-indicator');
@@ -92,10 +108,21 @@ export class SyncManager {
       this._updateHostUI();
     });
 
-    // Also check initial user list for host status
-    this.ws.on('peer_joined', () => {
-      // If we are the only one in the room (before others join), we should be host.
-      // But server assigns it, so we'll wait for user_list or assume it from the server.
+    // Track active users
+    this.ws.on('peer_joined', (msg) => {
+      if (!this.activeUsers.has(msg.userId)) {
+        this.activeUsers.set(msg.userId, new Set());
+      }
+      this.activeUsers.get(msg.userId).add(msg.clientId);
+    });
+
+    this.ws.on('peer_left', (msg) => {
+      if (this.activeUsers.has(msg.userId)) {
+        this.activeUsers.get(msg.userId).delete(msg.clientId);
+        if (this.activeUsers.get(msg.userId).size === 0) {
+          this.activeUsers.delete(msg.userId);
+        }
+      }
     });
 
     // Element Operations (fallback or initial sync from server)

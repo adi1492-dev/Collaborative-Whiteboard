@@ -108,7 +108,7 @@ export class CommandPalette {
   }
   
   _bindEvents() {
-    window.addEventListener('keydown', (e) => {
+    this._boundKeyDown = (e) => {
       // Toggle on Ctrl+K or Cmd+K
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -131,7 +131,9 @@ export class CommandPalette {
         e.preventDefault();
         this._executeSelected();
       }
-    });
+    };
+    
+    window.addEventListener('keydown', this._boundKeyDown);
     
     this.input.addEventListener('input', () => {
       this.selectedIndex = 0;
@@ -254,6 +256,9 @@ export class CommandPalette {
   }
   
   destroy() {
+    if (this._boundKeyDown) {
+      window.removeEventListener('keydown', this._boundKeyDown);
+    }
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }
