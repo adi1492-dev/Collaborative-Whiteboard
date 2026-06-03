@@ -232,7 +232,7 @@ export class BoardPage {
     this.ih.contextMenu = this.contextMenu;
 
     // 9. Export Manager
-    this.exportMgr = new ExportManager(this.cm, this.em);
+    this.exportMgr = new ExportManager(this.cm, this.em, this.sync, this.history);
 
     // 10. Toolbar & Property Panel
     this.toolbar = new Toolbar(uiContainer, this.ih);
