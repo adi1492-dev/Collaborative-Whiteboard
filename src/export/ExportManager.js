@@ -296,25 +296,37 @@ export class ExportManager {
       if (el.type === 'shape') {
         const shape = el.shapeType || 'rect';
         if (shape === 'ellipse') {
-          svgParts.push(`<ellipse cx="${(+x + +w/2).toFixed(2)}" cy="${(+y + +h/2).toFixed(2)}" rx="${(+w/2).toFixed(2)}" ry="${(+h/2).toFixed(2)}" fill="${escape(fill)}" stroke="${escape(stroke)}" stroke-width="${sw}" opacity="${opacity}"${rot}/>`);
+          svgParts.push(`<ellipse data-type="shape" cx="${(+x + +w/2).toFixed(2)}" cy="${(+y + +h/2).toFixed(2)}" rx="${(+w/2).toFixed(2)}" ry="${(+h/2).toFixed(2)}" fill="${escape(fill)}" stroke="${escape(stroke)}" stroke-width="${sw}" opacity="${opacity}"${rot}/>`);
         } else {
           const rx = shape === 'rounded-rect' ? '8' : '0';
-          svgParts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${escape(fill)}" stroke="${escape(stroke)}" stroke-width="${sw}" opacity="${opacity}"${rot}/>`);
+          svgParts.push(`<rect data-type="shape" x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${escape(fill)}" stroke="${escape(stroke)}" stroke-width="${sw}" opacity="${opacity}"${rot}/>`);
         }
         if (el.text) {
-          svgParts.push(`<text x="${(+x + +w/2).toFixed(2)}" y="${(+y + +h/2).toFixed(2)}" text-anchor="middle" dominant-baseline="middle" font-family="Inter, sans-serif" font-size="${el.style?.fontSize || 14}" fill="${escape(el.style?.strokeColor || '#ffffff')}" opacity="${opacity}"${rot}>${escape(el.text)}</text>`);
+          const lines = (el.text || '').split('\n');
+          const lineH = (el.style?.fontSize || 14) * 1.2;
+          const startY = (+y + +h/2) - ((lines.length - 1) * lineH) / 2;
+          let textSvg = `<text x="${(+x + +w/2).toFixed(2)}" y="${startY.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" font-family="Inter, sans-serif" font-size="${el.style?.fontSize || 14}" fill="${escape(el.style?.strokeColor || '#ffffff')}" opacity="${opacity}"${rot}>`;
+          lines.forEach((line, i) => {
+            textSvg += `<tspan x="${(+x + +w/2).toFixed(2)}" dy="${i === 0 ? 0 : lineH}">${escape(line)}</tspan>`;
+          });
+          textSvg += `</text>`;
+          svgParts.push(textSvg);
         }
       } else if (el.type === 'sticky' || el.type === 'text') {
         const bgColor = fill !== 'none' && fill !== 'transparent' ? fill : 'rgba(192,193,255,0.12)';
+        const textColor = el.type === 'text' ? (el.style?.fillColor || '#c0c1ff') : '#131313';
+        const padding = el.type === 'text' ? '0' : '16px';
+        const textAlign = el.style?.textAlign || (el.type === 'text' ? 'left' : 'center');
+
         if (el.type === 'sticky') {
-          svgParts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${escape(bgColor)}" opacity="${opacity}"${rot}/>`);
+          svgParts.push(`<rect data-type="sticky" x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${escape(bgColor)}" opacity="${opacity}"${rot} style="filter: drop-shadow(0px 5px 10px rgba(0,0,0,0.15));"/>`);
         }
-        svgParts.push(`<foreignObject x="${x}" y="${y}" width="${w}" height="${h}"${rot}><div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Inter,sans-serif;font-size:${el.style?.fontSize || 14}px;color:white;padding:12px;overflow:hidden;opacity:${opacity}">${escape(el.text || '')}</div></foreignObject>`);
+        svgParts.push(`<foreignObject data-type="${el.type}" x="${x}" y="${y}" width="${w}" height="${h}"${rot}><div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Inter,sans-serif;font-size:${el.style?.fontSize || 14}px;color:${escape(textColor)};padding:${padding};overflow:hidden;opacity:${opacity};box-sizing:border-box;white-space:pre-wrap;word-wrap:break-word;text-align:${textAlign};width:100%;height:100%;">${escape(el.text || '')}</div></foreignObject>`);
       } else if (el.type === 'freehand') {
         const pts = el.points || [];
         if (pts.length >= 2) {
           const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${(p.x - ox).toFixed(1)},${(p.y - oy).toFixed(1)}`).join(' ');
-          svgParts.push(`<path d="${d}" fill="none" stroke="${escape(stroke)}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"${rot}/>`);
+          svgParts.push(`<path data-type="freehand" d="${d}" fill="none" stroke="${escape(stroke)}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"${rot}/>`);
         }
       }
     }
@@ -365,20 +377,49 @@ export class ExportManager {
 
     const parseNum = (v) => parseFloat(v) || 0;
 
-    // Convert SVG rects -> ShapeElement
+    // Convert SVG rects -> ShapeElement or StickyElement
     doc.querySelectorAll('rect').forEach(el => {
       if (el.closest('defs')) return;
-      imported.push(this.sync._hydrateElement({
-        id: generateId(), type: 'shape',
-        x: viewCX + parseNum(el.getAttribute('x')),
-        y: viewCY + parseNum(el.getAttribute('y')),
-        width: parseNum(el.getAttribute('width')) || 100,
-        height: parseNum(el.getAttribute('height')) || 60,
-        shapeType: parseNum(el.getAttribute('rx')) > 0 ? 'rounded-rect' : 'rect',
-        text: '', zIndex: imported.length, opacity: 1, visible: true, locked: false, rotation: 0,
-        style: { fillColor: el.getAttribute('fill') || 'transparent', strokeColor: el.getAttribute('stroke') || '#c0c1ff', strokeWidth: parseNum(el.getAttribute('stroke-width')) || 1, fontSize: 14 },
-        createdAt: now, updatedAt: now, createdBy: null
-      }));
+      
+      const xAttr = el.getAttribute('x');
+      const yAttr = el.getAttribute('y');
+      const wAttr = el.getAttribute('width');
+      const hAttr = el.getAttribute('height');
+      const dataType = el.getAttribute('data-type');
+      const x = viewCX + parseNum(xAttr);
+      const y = viewCY + parseNum(yAttr);
+      const w = parseNum(wAttr) || 160;
+      const h = parseNum(hAttr) || 160;
+      
+      if (dataType === 'sticky') {
+        const fo = doc.querySelector(`foreignObject[x="${xAttr}"][y="${yAttr}"]`);
+        imported.push(this.sync._hydrateElement({
+          id: generateId(), type: 'sticky',
+          x, y, width: w, height: h,
+          text: fo ? (fo.textContent || '').trim() : '',
+          zIndex: imported.length, opacity: parseNum(el.getAttribute('opacity') || 1), visible: true, locked: false, rotation: 0,
+          style: { fillColor: el.getAttribute('fill') || '#c0c1ff', strokeColor: 'transparent', strokeWidth: 0, fontSize: 14, textAlign: 'center' },
+          createdAt: now, updatedAt: now, createdBy: null
+        }));
+      } else {
+        // Treat as shape
+        let text = '';
+        const cx = xAttr ? (+xAttr + +wAttr/2) : 0;
+        const cy = yAttr ? (+yAttr + +hAttr/2) : 0;
+        if (cx && cy) {
+          // Attempt to find <text> element near center
+          const textEl = Array.from(doc.querySelectorAll('text')).find(t => Math.abs(parseNum(t.getAttribute('x')) - cx) < 5 && Math.abs(parseNum(t.getAttribute('y')) - cy) < 20);
+          if (textEl) text = Array.from(textEl.querySelectorAll('tspan')).map(ts => ts.textContent).join('\\n') || textEl.textContent || '';
+        }
+        imported.push(this.sync._hydrateElement({
+          id: generateId(), type: 'shape',
+          x, y, width: w, height: h,
+          shapeType: parseNum(el.getAttribute('rx')) > 0 ? 'rounded-rect' : 'rect',
+          text: text, zIndex: imported.length, opacity: parseNum(el.getAttribute('opacity') || 1), visible: true, locked: false, rotation: 0,
+          style: { fillColor: el.getAttribute('fill') || 'transparent', strokeColor: el.getAttribute('stroke') || '#c0c1ff', strokeWidth: parseNum(el.getAttribute('stroke-width')) || 1, fontSize: 14 },
+          createdAt: now, updatedAt: now, createdBy: null
+        }));
+      }
     });
 
     // Convert SVG ellipses -> ShapeElement
@@ -388,11 +429,15 @@ export class ExportManager {
       const ry = parseNum(el.getAttribute('ry') || el.getAttribute('r'));
       const cx = parseNum(el.getAttribute('cx'));
       const cy = parseNum(el.getAttribute('cy'));
+      let text = '';
+      const textEl = Array.from(doc.querySelectorAll('text')).find(t => Math.abs(parseNum(t.getAttribute('x')) - cx) < 5 && Math.abs(parseNum(t.getAttribute('y')) - cy) < 20);
+      if (textEl) text = Array.from(textEl.querySelectorAll('tspan')).map(ts => ts.textContent).join('\\n') || textEl.textContent || '';
+      
       imported.push(this.sync._hydrateElement({
         id: generateId(), type: 'shape',
         x: viewCX + cx - rx, y: viewCY + cy - ry,
         width: rx * 2, height: ry * 2, shapeType: 'ellipse',
-        text: '', zIndex: imported.length, opacity: 1, visible: true, locked: false, rotation: 0,
+        text: text, zIndex: imported.length, opacity: parseNum(el.getAttribute('opacity') || 1), visible: true, locked: false, rotation: 0,
         style: { fillColor: el.getAttribute('fill') || 'transparent', strokeColor: el.getAttribute('stroke') || '#c0c1ff', strokeWidth: parseNum(el.getAttribute('stroke-width')) || 1, fontSize: 14 },
         createdAt: now, updatedAt: now, createdBy: null
       }));
@@ -414,25 +459,59 @@ export class ExportManager {
       if (pts.length >= 2) {
         imported.push(this.sync._hydrateElement({
           id: generateId(), type: 'freehand', x: pts[0].x, y: pts[0].y, width: 1, height: 1,
-          points: pts, zIndex: imported.length, opacity: 1, visible: true, locked: false, rotation: 0,
+          points: pts, zIndex: imported.length, opacity: parseNum(el.getAttribute('opacity') || 1), visible: true, locked: false, rotation: 0,
           style: { strokeColor: el.getAttribute('stroke') || '#c0c1ff', strokeWidth: parseNum(el.getAttribute('stroke-width')) || 2, fillColor: 'none', fontSize: 14 },
           createdAt: now, updatedAt: now, createdBy: null
         }));
       }
     });
 
-    // Convert SVG text -> TextElement
+    // Convert SVG foreignObjects with data-type="text" -> TextElement
+    doc.querySelectorAll('foreignObject').forEach(el => {
+      if (el.closest('defs')) return;
+      if (el.getAttribute('data-type') === 'text') {
+        const div = el.querySelector('div');
+        const color = div ? div.style.color : '#c0c1ff';
+        const fontSize = div ? parseNum(div.style.fontSize) || 14 : 14;
+        imported.push(this.sync._hydrateElement({
+          id: generateId(), type: 'text',
+          x: viewCX + parseNum(el.getAttribute('x')),
+          y: viewCY + parseNum(el.getAttribute('y')),
+          width: parseNum(el.getAttribute('width')) || 200,
+          height: parseNum(el.getAttribute('height')) || 40,
+          text: (el.textContent || '').trim(),
+          zIndex: imported.length, opacity: parseNum(el.getAttribute('opacity') || 1), visible: true, locked: false, rotation: 0,
+          style: { fillColor: color, strokeColor: 'transparent', strokeWidth: 0, fontSize: fontSize, fontFamily: 'Inter, sans-serif', textAlign: 'left' },
+          createdAt: now, updatedAt: now, createdBy: null
+        }));
+      }
+    });
+
+    // Fallback: Convert loose SVG text -> TextElement (if not part of a shape)
     doc.querySelectorAll('text').forEach(el => {
       if (el.closest('defs')) return;
-      const content = el.textContent?.trim();
+      // Skip if it's already inside a shape (naive check: if a shape used it, we don't have a direct link, but we can check if it's centered in a rect/ellipse)
+      const cx = parseNum(el.getAttribute('x'));
+      const cy = parseNum(el.getAttribute('y'));
+      const isShapeText = Array.from(doc.querySelectorAll('rect, ellipse, circle')).some(shape => {
+        const sx = parseNum(shape.getAttribute('x') || shape.getAttribute('cx'));
+        const sy = parseNum(shape.getAttribute('y') || shape.getAttribute('cy'));
+        const sw = parseNum(shape.getAttribute('width') || shape.getAttribute('rx')*2 || 0);
+        const sh = parseNum(shape.getAttribute('height') || shape.getAttribute('ry')*2 || 0);
+        return (Math.abs(sx + sw/2 - cx) < 5 && Math.abs(sy + sh/2 - cy) < 20);
+      });
+      
+      if (isShapeText) return;
+      
+      const content = Array.from(el.querySelectorAll('tspan')).map(ts => ts.textContent).join('\\n') || el.textContent?.trim();
       if (!content) return;
       imported.push(this.sync._hydrateElement({
         id: generateId(), type: 'text',
-        x: viewCX + parseNum(el.getAttribute('x')),
-        y: viewCY + parseNum(el.getAttribute('y')),
+        x: viewCX + parseNum(el.getAttribute('x')) - 100, // naive centering offset for text-anchor="middle"
+        y: viewCY + parseNum(el.getAttribute('y')) - 10,
         width: 300, height: 32, text: content,
-        zIndex: imported.length, opacity: 1, visible: true, locked: false, rotation: 0,
-        style: { strokeColor: el.getAttribute('fill') || '#c0c1ff', fillColor: 'transparent', strokeWidth: 0, fontSize: parseNum(el.getAttribute('font-size')) || 14, fontFamily: 'Inter, sans-serif' },
+        zIndex: imported.length, opacity: parseNum(el.getAttribute('opacity') || 1), visible: true, locked: false, rotation: 0,
+        style: { fillColor: el.getAttribute('fill') || '#c0c1ff', strokeColor: 'transparent', strokeWidth: 0, fontSize: parseNum(el.getAttribute('font-size')) || 14, fontFamily: 'Inter, sans-serif' },
         createdAt: now, updatedAt: now, createdBy: null
       }));
     });
