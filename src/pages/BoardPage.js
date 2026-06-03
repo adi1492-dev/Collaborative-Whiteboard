@@ -419,7 +419,7 @@ export class BoardPage {
           const reqBtn = document.getElementById('request-access-btn');
           if (reqBtn) {
             reqBtn.disabled = false;
-            reqBtn.innerHTML = \`<span class="material-symbols-outlined" style="font-size:16px">lock_open</span><span>Request Edit Access</span>\`;
+            reqBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size:16px">lock_open</span><span>Request Edit Access</span>`;
           }
         }
       });
