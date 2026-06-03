@@ -136,3 +136,21 @@ func (r *Room) GetUserList() []map[string]interface{} {
 	}
 	return users
 }
+
+// GetUserListWithClientID returns all existing members including their clientId.
+// Used when a new joiner needs to know who is already in the room.
+func (r *Room) GetUserListWithClientID() []map[string]interface{} {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	users := make([]map[string]interface{}, 0, len(r.clients))
+	for client := range r.clients {
+		users = append(users, map[string]interface{}{
+			"userId":      client.UserID,
+			"clientId":    client.ClientID,
+			"displayName": client.UserName,
+			"isHost":      client.IsHost,
+		})
+	}
+	return users
+}

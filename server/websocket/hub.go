@@ -58,11 +58,15 @@ func (h *Hub) addClient(client *Client) {
 		log.Printf("🏠 Room created: %s", client.BoardID)
 	}
 
+	// Capture existing members BEFORE adding the new client
+	existingMembers := room.GetUserListWithClientID()
+
 	room.AddClient(client)
 	client.Room = room
 	log.Printf("👤 User %s joined room %s (%d users)", client.UserName, client.BoardID, room.ClientCount())
-	
-	// Broadcast peer_joined to ALL clients in the room (so everyone gets updated presence)
+
+	// Broadcast peer_joined to existing clients ONLY (not the new joiner)
+	// This prevents the new joiner from counting themselves in activeUsers
 	joinMsg := Message{
 		Type:      "peer_joined",
 		UserID:    client.UserID,
@@ -70,7 +74,24 @@ func (h *Hub) addClient(client *Client) {
 		UserName:  client.UserName,
 		Timestamp: time.Now().UnixMilli(),
 	}
-	room.BroadcastAll(joinMsg)
+	room.Broadcast(joinMsg, client) // Only send to others, NOT the new client
+
+	// Send the new joiner a room_state message with all EXISTING members
+	// so they can populate their activeUsers map correctly
+	if len(existingMembers) > 0 {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"members": existingMembers,
+		})
+		roomStateMsg := Message{
+			Type:    "room_state",
+			Payload: json.RawMessage(payload),
+		}
+		data, _ := json.Marshal(roomStateMsg)
+		select {
+		case client.Send <- data:
+		default:
+		}
+	}
 }
 
 func (h *Hub) removeClient(client *Client) {

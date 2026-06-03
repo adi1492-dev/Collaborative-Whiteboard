@@ -277,20 +277,29 @@ export class BoardPage {
     }
 
     // 13. Presence avatars & peer toasts
-    this.sync.ws.on('peer_joined', (msg) => {
+    // Register room_state callback so presence bar refreshes when we first join
+    this.sync._onPresenceUpdate = () => {
       this._updatePresenceBar();
+      this._updatePeerCount();
+    };
+
+    this.sync.ws.on('peer_joined', (msg) => {
+      // activeUsers is updated by SyncManager before this fires,
+      // so we can safely read it now
+      this._updatePresenceBar();
+      this._updatePeerCount();
       if (msg.userName && msg.userId !== this.sync.userId) {
         Toast.show(`${msg.userName} joined the canvas`, 'info', 3000);
       }
-      // Update P2P count after a short delay for connection to settle
+      // Also update after WebRTC settles
       setTimeout(() => this._updatePeerCount(), 1500);
     });
     this.sync.ws.on('peer_left', (msg) => {
       this._updatePresenceBar();
+      this._updatePeerCount();
       if (msg.userName && msg.userId !== this.sync.userId) {
         Toast.show(`${msg.userName} left the canvas`, 'warning', 3000);
       }
-      setTimeout(() => this._updatePeerCount(), 500);
     });
 
     // 14. Load initial elements

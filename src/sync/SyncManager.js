@@ -101,8 +101,12 @@ export class SyncManager {
       this._updateHostUI();
     });
 
-    // Track active users
+    // Track active users — guard against counting ourselves
     this.ws.on('peer_joined', (msg) => {
+      // Skip if this is our own join event (server now only sends to others,
+      // but keep this guard as a safety net)
+      if (msg.userId === this.userId || msg.clientId === this.ws.clientId) return;
+
       if (!this.activeUsers.has(msg.userId)) {
         this.activeUsers.set(msg.userId, new Set());
       }
@@ -116,6 +120,22 @@ export class SyncManager {
           this.activeUsers.delete(msg.userId);
         }
       }
+    });
+
+    // Handle room_state: server sends existing members when we first join.
+    // This ensures we know about users who were ALREADY in the room.
+    this.ws.on('room_state', (msg) => {
+      const members = msg.payload?.members || [];
+      for (const member of members) {
+        // Skip if this entry is for ourselves
+        if (member.userId === this.userId || member.clientId === this.ws.clientId) continue;
+        if (!this.activeUsers.has(member.userId)) {
+          this.activeUsers.set(member.userId, new Set());
+        }
+        this.activeUsers.get(member.userId).add(member.clientId);
+      }
+      // Trigger presence bar update if a callback exists
+      if (this._onPresenceUpdate) this._onPresenceUpdate();
     });
 
     // Element Operations (fallback or initial sync from server)
