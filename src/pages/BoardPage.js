@@ -137,6 +137,12 @@ export class BoardPage {
               <span class="material-symbols-outlined" style="font-size:16px">group</span>Collaborators
             </button>
 
+            <!-- Viewer: Request Access -->
+            <button class="btn btn-primary" id="request-access-btn" style="display:none;padding:6px 12px;height:auto;background:var(--tertiary);">
+              <span class="material-symbols-outlined" style="font-size:16px">lock_open</span>
+              <span>Request Edit Access</span>
+            </button>
+
             <!-- Save -->
             <button class="btn btn-primary" id="manual-save-btn" style="padding:6px 12px;height:auto;">
               <span class="material-symbols-outlined" style="font-size:16px">save</span>
@@ -169,6 +175,7 @@ export class BoardPage {
       if (this._destroyed) return;
 
       this.boardData = data.board;
+      this.boardRole = data.role || 'editor';
       this.root.querySelector('#board-title').textContent = this.boardData.title;
       this._initEngine(data.elements || []);
       this._initRoomKey();
@@ -240,9 +247,21 @@ export class BoardPage {
     // 9. Export Manager
     this.exportMgr = new ExportManager(this.cm, this.em, this.sync, this.history);
 
+    // Lock UI if viewer
+    const isViewer = this.boardRole === 'viewer';
+
     // 10. Toolbar & Property Panel
     this.toolbar = new Toolbar(uiContainer, this.ih);
     this.propertyPanel = new PropertyPanel(uiContainer, this.ih, this.em, this.sync);
+
+    if (isViewer) {
+      uiContainer.style.display = 'none'; // hide toolbar and properties completely
+      this.root.querySelector('#manual-save-btn').style.display = 'none';
+      const reqBtn = this.root.querySelector('#request-access-btn');
+      reqBtn.style.display = 'flex';
+      reqBtn.addEventListener('click', () => this._requestAccess(reqBtn));
+      this.ih.setActiveTool('pan');
+    }
 
     // 11. AI Manager
     this.ai = new AIManager(this.app, this);
@@ -342,8 +361,68 @@ export class BoardPage {
       this._updatePresenceBar();
       this._updatePeerCount();
       if (msg.userName && msg.userId !== this.sync.userId) {
-        Toast.show(`${msg.userName} left the canvas`, 'warning', 3000);
+        import('../ui/Toast.js').then(({ Toast }) => {
+          Toast.show(`${msg.userName} left the canvas`, 'warning', 3000);
+        });
       }
+    });
+
+    // 13.5 Access Request Handling
+    this.sync.ws.on('access_request', (msg) => {
+      const data = JSON.parse(msg.payload);
+      import('../ui/Toast.js').then(({ Toast }) => {
+        const toast = Toast.showHTML(`
+          <div class="toast-icon"><span class="material-symbols-outlined" style="color:var(--tertiary)">person_add</span></div>
+          <div class="toast-content" style="display:flex;flex-direction:column;gap:8px;">
+            <div style="font-weight:600;">${data.userName} requested Edit Access</div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-primary" style="padding:4px 8px;font-size:12px;height:auto;" id="approve-${data.requestId}">Approve</button>
+              <button class="btn btn-outline" style="padding:4px 8px;font-size:12px;height:auto;" id="reject-${data.requestId}">Reject</button>
+            </div>
+          </div>
+          <button class="toast-close"><span class="material-symbols-outlined" style="font-size: 18px;">close</span></button>
+        `, 0); // No timeout
+
+        const approveBtn = toast.querySelector(`#approve-${data.requestId}`);
+        const rejectBtn = toast.querySelector(`#reject-${data.requestId}`);
+
+        approveBtn.onclick = async () => {
+          approveBtn.disabled = true;
+          try {
+            await this.app.auth.apiFetch(`/api/boards/${this.boardId}/access/approve`, {
+              method: 'POST', body: JSON.stringify({ requestId: data.requestId })
+            });
+            Toast.dismiss(toast);
+          } catch(e) { approveBtn.disabled = false; }
+        };
+
+        rejectBtn.onclick = async () => {
+          rejectBtn.disabled = true;
+          try {
+            await this.app.auth.apiFetch(`/api/boards/${this.boardId}/access/reject`, {
+              method: 'POST', body: JSON.stringify({ requestId: data.requestId })
+            });
+            Toast.dismiss(toast);
+          } catch(e) { rejectBtn.disabled = false; }
+        };
+      });
+    });
+
+    this.sync.ws.on('access_decision', (msg) => {
+      const data = JSON.parse(msg.payload);
+      import('../ui/Toast.js').then(({ Toast }) => {
+        if (data.status === 'approved') {
+          Toast.show('Your edit access was approved! Reloading...', 'success', 3000);
+          setTimeout(() => window.location.reload(), 1500);
+        } else if (data.status === 'rejected') {
+          Toast.show('Your edit access request was declined.', 'error', 5000);
+          const reqBtn = document.getElementById('request-access-btn');
+          if (reqBtn) {
+            reqBtn.disabled = false;
+            reqBtn.innerHTML = \`<span class="material-symbols-outlined" style="font-size:16px">lock_open</span><span>Request Edit Access</span>\`;
+          }
+        }
+      });
     });
 
     // 14. Load initial elements
@@ -376,6 +455,26 @@ export class BoardPage {
 
     // P2P count update every 5s
     this._peerCountInterval = setInterval(() => this._updatePeerCount(), 5000);
+  }
+
+  async _requestAccess(btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="material-symbols-outlined" style="font-size:16px">hourglass_empty</span><span>Requesting...</span>`;
+    try {
+      const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/access/request`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      import('../ui/Toast.js').then(({ Toast }) => {
+        Toast.show('Access requested. Waiting for owner approval.', 'success');
+      });
+      btn.innerHTML = `<span class="material-symbols-outlined" style="font-size:16px">schedule</span><span>Pending...</span>`;
+    } catch (e) {
+      import('../ui/Toast.js').then(({ Toast }) => {
+        const errorMsg = JSON.parse(e.message).error || e.message;
+        Toast.show('Request failed: ' + errorMsg, 'error');
+      });
+      btn.disabled = false;
+      btn.innerHTML = `<span class="material-symbols-outlined" style="font-size:16px">lock_open</span><span>Request Edit Access</span>`;
+    }
   }
 
   _initZoomControls() {

@@ -55,6 +55,15 @@ func InitSQLiteStore() error {
 			expires_at DATETIME NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
+		`CREATE TABLE IF NOT EXISTS access_requests (
+			id TEXT PRIMARY KEY,
+			board_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(board_id, user_id)
+		);`,
 	}
 
 	for _, q := range queries {
@@ -153,6 +162,84 @@ func SQLiteFindRefreshToken(tokenHash string) (*SQLiteRefreshToken, error) {
 func SQLiteDeleteRefreshToken(tokenHash string) error {
 	_, err := sqliteDB.Exec(`DELETE FROM refresh_tokens WHERE token_hash = ?`, tokenHash)
 	return err
+}
+
+// ---- ACCESS REQUEST STORE ----
+
+type SQLiteAccessRequest struct {
+	ID        string    `json:"id"`
+	BoardID   string    `json:"boardId"`
+	UserID    string    `json:"userId"`
+	Status    string    `json:"status"` // 'pending', 'approved', 'rejected'
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type SQLiteAccessRequestWithUser struct {
+	SQLiteAccessRequest
+	UserDisplayName string `json:"userDisplayName"`
+	UserEmail       string `json:"userEmail"`
+	UserAvatarColor string `json:"userAvatarColor"`
+}
+
+func SQLiteCreateAccessRequest(id, boardID, userID string) error {
+	_, err := sqliteDB.Exec(
+		`INSERT INTO access_requests (id, board_id, user_id, status) VALUES (?, ?, ?, 'pending') 
+		ON CONFLICT(board_id, user_id) DO UPDATE SET status = 'pending', updated_at = CURRENT_TIMESTAMP`,
+		id, boardID, userID,
+	)
+	return err
+}
+
+func SQLiteUpdateAccessRequestStatus(id, status string) error {
+	_, err := sqliteDB.Exec(
+		`UPDATE access_requests SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		status, id,
+	)
+	return err
+}
+
+func SQLiteGetAccessRequest(id string) (*SQLiteAccessRequest, error) {
+	row := sqliteDB.QueryRow(`SELECT id, board_id, user_id, status, created_at, updated_at FROM access_requests WHERE id = ?`, id)
+	r := &SQLiteAccessRequest{}
+	err := row.Scan(&r.ID, &r.BoardID, &r.UserID, &r.Status, &r.CreatedAt, &r.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func SQLiteListAccessRequests(boardID string, status string) ([]*SQLiteAccessRequestWithUser, error) {
+	query := `
+		SELECT ar.id, ar.board_id, ar.user_id, ar.status, ar.created_at, ar.updated_at,
+		       u.display_name, u.email, u.avatar_color
+		FROM access_requests ar
+		JOIN users u ON ar.user_id = u.id
+		WHERE ar.board_id = ?
+	`
+	args := []interface{}{boardID}
+
+	if status != "" {
+		query += " AND ar.status = ?"
+		args = append(args, status)
+	}
+	query += " ORDER BY ar.updated_at DESC"
+
+	rows, err := sqliteDB.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reqs []*SQLiteAccessRequestWithUser
+	for rows.Next() {
+		r := &SQLiteAccessRequestWithUser{}
+		if err := rows.Scan(&r.ID, &r.BoardID, &r.UserID, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.UserDisplayName, &r.UserEmail, &r.UserAvatarColor); err != nil {
+			continue
+		}
+		reqs = append(reqs, r)
+	}
+	return reqs, nil
 }
 
 // ---- BOARD STORE ----

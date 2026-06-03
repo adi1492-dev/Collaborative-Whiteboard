@@ -144,9 +144,40 @@ class ToastManager {
     // Auto dismiss
     if (duration > 0) {
       setTimeout(() => {
-        this.dismiss(toast);
+        if (this.container.contains(toast)) {
+          this.dismiss(toast);
+        }
       }, duration);
     }
+    
+    return toast;
+  }
+
+  showHTML(htmlContent, duration = 0) {
+    this.init();
+    
+    const toast = document.createElement('div');
+    toast.className = `toast-item`;
+    
+    toast.innerHTML = htmlContent;
+    
+    // Add close action if close button exists
+    const closeBtn = toast.querySelector('.toast-close');
+    if (closeBtn) {
+      closeBtn.onclick = () => this.dismiss(toast);
+    }
+    
+    this.container.appendChild(toast);
+    
+    if (duration > 0) {
+      setTimeout(() => {
+        if (this.container.contains(toast)) {
+          this.dismiss(toast);
+        }
+      }, duration);
+    }
+    
+    return toast;
   }
 
   dismiss(toast) {

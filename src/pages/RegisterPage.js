@@ -153,7 +153,13 @@ export class RegisterPage {
 
       try {
         await this.app.auth.register(email, password, displayName);
-        this.app.navigate('/dashboard');
+        const redirectUrl = localStorage.getItem('canvasflow-redirect');
+        if (redirectUrl) {
+          localStorage.removeItem('canvasflow-redirect');
+          this.app.navigate(redirectUrl.startsWith('#') ? redirectUrl.slice(1) : redirectUrl);
+        } else {
+          this.app.navigate('/dashboard');
+        }
       } catch (err) {
         errorText.textContent = err.message;
         errorEl.classList.add('visible');

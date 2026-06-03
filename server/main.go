@@ -31,6 +31,7 @@ func main() {
 
 	// Create WebSocket Hub
 	hub := ws.NewHub()
+	ws.DefaultHub = hub
 	go hub.Run()
 
 	// Setup Gin router
@@ -94,6 +95,10 @@ func main() {
 		boardGroup.POST("/:id/share", handlers.EnablePublicView)
 		boardGroup.DELETE("/:id/share", handlers.DisablePublicView)
 		boardGroup.POST("/:id/invite", handlers.InviteCollaborator)
+		boardGroup.POST("/:id/access/request", handlers.RequestAccess)
+		boardGroup.POST("/:id/access/approve", handlers.ApproveAccess)
+		boardGroup.POST("/:id/access/reject", handlers.RejectAccess)
+		boardGroup.GET("/:id/access/requests", handlers.ListAccessRequests)
 		boardGroup.POST("/:id/key/refresh", handlers.RefreshRoomKey)
 		boardGroup.DELETE("/:id/collaborators/:userId", handlers.RemoveCollaborator)
 		boardGroup.POST("/:id/sync", handlers.SyncBoardElements)

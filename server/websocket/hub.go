@@ -25,6 +25,8 @@ type Hub struct {
 	mu         sync.RWMutex
 }
 
+var DefaultHub *Hub
+
 // NewHub creates a new WebSocket Hub.
 func NewHub() *Hub {
 	return &Hub{
@@ -116,6 +118,33 @@ func (h *Hub) removeClient(client *Client) {
 		if room.ClientCount() == 0 {
 			delete(h.rooms, client.BoardID)
 			log.Printf("🏚️  Room destroyed: %s", client.BoardID)
+		}
+	}
+}
+
+// BroadcastToUser sends a message to all clients of a specific user in a room.
+func (h *Hub) BroadcastToUser(boardID, userID string, msg Message) {
+	h.mu.RLock()
+	room, exists := h.rooms[boardID]
+	h.mu.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+
+	room.mu.RLock()
+	defer room.mu.RUnlock()
+	for client := range room.clients {
+		if client.UserID == userID {
+			select {
+			case client.Send <- data:
+			default:
+			}
 		}
 	}
 }

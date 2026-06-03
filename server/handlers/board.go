@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"math/big"
 	"net/http"
 	"time"
 
 	"github.com/canvasflow/server/auth"
 	"github.com/canvasflow/server/database"
+	ws "github.com/canvasflow/server/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -111,9 +113,9 @@ func GetBoard(c *gin.Context) {
 			break
 		}
 	}
+	role := "editor"
 	if !isOwner && !isCollaborator {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
-		return
+		role = "viewer"
 	}
 
 	if !isOwner {
@@ -124,7 +126,11 @@ func GetBoard(c *gin.Context) {
 	if elements == nil {
 		elements = []map[string]interface{}{}
 	}
-	c.JSON(http.StatusOK, gin.H{"board": sqliteBoardToMap(board), "elements": elements})
+	c.JSON(http.StatusOK, gin.H{
+		"board":    sqliteBoardToMap(board),
+		"elements": elements,
+		"role":     role,
+	})
 }
 
 // UpdateBoard handles PUT /api/boards/:id
@@ -259,6 +265,168 @@ func InviteCollaborator(c *gin.Context) {
 		"displayName": targetUser.DisplayName,
 		"email":       targetUser.Email,
 	})
+}
+
+// RequestAccess handles POST /api/boards/:id/access/request
+func RequestAccess(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+
+	board, err := database.SQLiteGetBoard(boardID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Board not found"})
+		return
+	}
+
+	// Cannot request if owner
+	if board.OwnerID == userID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "You are the owner"})
+		return
+	}
+	// Check if already collaborator
+	for _, col := range board.Collaborators {
+		if cid, ok := col["userId"].(string); ok && cid == userID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Already an editor"})
+			return
+		}
+	}
+
+	reqID := uuid.New().String()
+	if err := database.SQLiteCreateAccessRequest(reqID, boardID, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+
+	// Notify owner via WebSocket
+	user, _ := database.SQLiteFindUserByID(userID)
+	userName := "Unknown"
+	if user != nil {
+		userName = user.DisplayName
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"requestId": reqID,
+		"userId":    userID,
+		"userName":  userName,
+	})
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.BroadcastToUser(boardID, board.OwnerID, ws.Message{
+			Type:      "access_request",
+			Payload:   json.RawMessage(payload),
+			Timestamp: time.Now().UnixMilli(),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Access requested"})
+}
+
+// ApproveAccess handles POST /api/boards/:id/access/approve
+func ApproveAccess(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+
+	var req struct {
+		RequestID string `json:"requestId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Request ID required"})
+		return
+	}
+
+	board, err := database.SQLiteGetBoard(boardID)
+	if err != nil || board.OwnerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only owner can approve"})
+		return
+	}
+
+	accessReq, err := database.SQLiteGetAccessRequest(req.RequestID)
+	if err != nil || accessReq.BoardID != boardID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Request not found"})
+		return
+	}
+
+	if err := database.SQLiteUpdateAccessRequestStatus(req.RequestID, "approved"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update status"})
+		return
+	}
+	
+	if err := database.SQLiteAddCollaborator(boardID, accessReq.UserID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add collaborator"})
+		return
+	}
+
+	// Notify the requesting user
+	payload, _ := json.Marshal(map[string]string{
+		"status": "approved",
+	})
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.BroadcastToUser(boardID, accessReq.UserID, ws.Message{
+			Type:      "access_decision",
+			Payload:   json.RawMessage(payload),
+			Timestamp: time.Now().UnixMilli(),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Access approved", "userId": accessReq.UserID})
+}
+
+// RejectAccess handles POST /api/boards/:id/access/reject
+func RejectAccess(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+
+	var req struct {
+		RequestID string `json:"requestId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Request ID required"})
+		return
+	}
+
+	board, err := database.SQLiteGetBoard(boardID)
+	if err != nil || board.OwnerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only owner can reject"})
+		return
+	}
+
+	if err := database.SQLiteUpdateAccessRequestStatus(req.RequestID, "rejected"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update status"})
+		return
+	}
+
+	accessReq, _ := database.SQLiteGetAccessRequest(req.RequestID)
+	if accessReq != nil && ws.DefaultHub != nil {
+		payload, _ := json.Marshal(map[string]string{
+			"status": "rejected",
+		})
+		ws.DefaultHub.BroadcastToUser(boardID, accessReq.UserID, ws.Message{
+			Type:      "access_decision",
+			Payload:   json.RawMessage(payload),
+			Timestamp: time.Now().UnixMilli(),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Access rejected"})
+}
+
+// ListAccessRequests handles GET /api/boards/:id/access/requests
+func ListAccessRequests(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+
+	board, err := database.SQLiteGetBoard(boardID)
+	if err != nil || board.OwnerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only owner can view requests"})
+		return
+	}
+
+	status := c.Query("status") // optional filter
+	reqs, err := database.SQLiteListAccessRequests(boardID, status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch requests"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"requests": reqs})
 }
 
 // ViewBoardPublic handles GET /api/boards/:id/view?token=... (no auth required)

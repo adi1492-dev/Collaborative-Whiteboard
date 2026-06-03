@@ -73,6 +73,7 @@ class App {
         // Check if it's a board route
         if (path.startsWith('/board/')) {
           if (!this.auth.isAuthenticated()) {
+            localStorage.setItem('canvasflow-redirect', window.location.hash);
             this.navigate('/login');
             return;
           }
