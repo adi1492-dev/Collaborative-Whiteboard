@@ -1,5 +1,11 @@
 /**
- * ExportManager — Export the whiteboard as PNG, SVG, or JSON.
+ * ExportManager — Export the whiteboard as PNG or JSON.
+ * Fixed:
+ * - Waits for document.fonts.ready before rendering text to offscreen canvas
+ * - Proper error handling for toBlob (was silently failing)
+ * - Replaced alert() with Toast
+ * - Appends anchor to body before clicking (Safari/Firefox compatibility)
+ * - Guards against zero-size export canvas
  */
 import { FreehandElement } from '../elements/FreehandElement.js';
 import { ShapeElement } from '../elements/ShapeElement.js';
@@ -15,45 +21,62 @@ export class ExportManager {
   /**
    * Export the entire board as a PNG image.
    */
-  exportAsPNG(filename = 'board.png') {
+  async exportAsPNG(filename = 'board.png') {
     const elements = Array.from(this.em.elements.values()).filter(el => el.visible);
     if (elements.length === 0) {
-      alert('Nothing to export! Draw something first.');
+      const { Toast } = await import('../ui/Toast.js');
+      Toast.show('Nothing to export! Draw something first.', 'warning', 3000);
       return;
     }
 
-    // Compute bounding box of all elements
+    // Compute tight bounding box of all elements
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const el of elements) {
       minX = Math.min(minX, el.x);
       minY = Math.min(minY, el.y);
-      maxX = Math.max(maxX, el.x + el.width);
-      maxY = Math.max(maxY, el.y + el.height);
+      maxX = Math.max(maxX, el.x + (el.width || 0));
+      maxY = Math.max(maxY, el.y + (el.height || 0));
     }
 
-    const padding = 40;
-    const exportW = (maxX - minX) + padding * 2;
-    const exportH = (maxY - minY) + padding * 2;
-    const dpr = 2; // Export at 2x for clarity
+    const padding = 48;
+    const exportW = Math.max(1, (maxX - minX) + padding * 2);
+    const exportH = Math.max(1, (maxY - minY) + padding * 2);
+    const dpr = 2; // 2× for retina clarity
 
-    const canvas = document.createElement('canvas');
-    canvas.width = exportW * dpr;
-    canvas.height = exportH * dpr;
-    const ctx = canvas.getContext('2d');
+    // Guard: create canvas
+    const offscreen = document.createElement('canvas');
+    offscreen.width = Math.round(exportW * dpr);
+    offscreen.height = Math.round(exportH * dpr);
+    const ctx = offscreen.getContext('2d');
+    if (!ctx) {
+      const { Toast } = await import('../ui/Toast.js');
+      Toast.show('Your browser does not support canvas export.', 'error', 4000);
+      return;
+    }
     ctx.scale(dpr, dpr);
 
-    // Fill background
+    // Fill background matching current theme
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     ctx.fillStyle = isDark ? '#131313' : '#f8f9ff';
     ctx.fillRect(0, 0, exportW, exportH);
 
-    // Translate so elements start at padding
+    // Translate so elements start at padding offset from their bounding box
     ctx.translate(padding - minX, padding - minY);
 
-    // Render all elements
+    // Wait for fonts to be fully loaded before text rendering
+    // This prevents text appearing as system fallback font on the export
+    try {
+      await document.fonts.ready;
+    } catch (_) {
+      // Non-critical; proceed without guarantee of font loading
+    }
+
+    // Render all elements in z-index order
     for (const el of this.em.sortedElements) {
       if (!el.visible) continue;
       ctx.save();
+
+      // Apply rotation if needed
       if (el.rotation !== 0) {
         const cx = el.x + el.width / 2;
         const cy = el.y + el.height / 2;
@@ -61,46 +84,94 @@ export class ExportManager {
         ctx.rotate(el.rotation);
         ctx.translate(-cx, -cy);
       }
-      ctx.globalAlpha = el.opacity;
-      el.render(ctx);
+
+      ctx.globalAlpha = el.opacity ?? 1;
+
+      try {
+        el.render(ctx);
+      } catch (err) {
+        console.warn('[Export] Failed to render element:', el.id, err);
+      }
+
       ctx.restore();
     }
 
-    // Trigger download
-    canvas.toBlob(blob => {
+    // Trigger download via toBlob for best cross-browser compatibility
+    try {
+      const blob = await new Promise((resolve, reject) => {
+        offscreen.toBlob(blob => {
+          if (blob) resolve(blob);
+          else reject(new Error('Canvas toBlob returned null — canvas may be tainted by cross-origin images'));
+        }, 'image/png');
+      });
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
+      // Must append to body first for Firefox compatibility
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
-    }, 'image/png');
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      const { Toast } = await import('../ui/Toast.js');
+      Toast.show('Exported as PNG!', 'success', 2000);
+    } catch (err) {
+      console.error('[Export] PNG export failed:', err);
+      const { Toast } = await import('../ui/Toast.js');
+      Toast.show(
+        err.message.includes('tainted')
+          ? 'Export failed: canvas contains cross-origin images.'
+          : 'PNG export failed. Please try again.',
+        'error',
+        5000
+      );
+    }
   }
 
   /**
    * Export board data as JSON (for backup/import).
    */
-  exportAsJSON(filename = 'board.json') {
+  async exportAsJSON(filename = 'board.json') {
+    const elements = Array.from(this.em.elements.values()).map(el => el.toJSON());
+    if (elements.length === 0) {
+      const { Toast } = await import('../ui/Toast.js');
+      Toast.show('Nothing to export! Draw something first.', 'warning', 3000);
+      return;
+    }
+
     const data = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
-      elements: Array.from(this.em.elements.values()).map(el => el.toJSON())
+      elements
     };
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      const { Toast } = await import('../ui/Toast.js');
+      Toast.show('Exported as JSON!', 'success', 2000);
+    } catch (err) {
+      console.error('[Export] JSON export failed:', err);
+      const { Toast } = await import('../ui/Toast.js');
+      Toast.show('JSON export failed. Please try again.', 'error', 3000);
+    }
   }
 
   /**
    * Show export dropdown menu.
    */
   showExportMenu(anchorEl, boardTitle) {
-    // Remove any existing dropdown
+    // Toggle: remove if already open
     const existing = document.getElementById('export-dropdown');
     if (existing) { existing.remove(); return; }
 
@@ -123,13 +194,13 @@ export class ExportManager {
       </button>
     `).join('');
 
-    // Position below anchor
+    // Position below anchor button
     const rect = anchorEl.getBoundingClientRect();
     menu.style.top = `${rect.bottom + 6}px`;
     menu.style.right = `${window.innerWidth - rect.right}px`;
     document.body.appendChild(menu);
 
-    // Wire hover styles
+    // Hover effects
     menu.querySelectorAll('button').forEach(btn => {
       btn.addEventListener('mouseenter', () => btn.style.background = 'rgba(192,193,255,0.1)');
       btn.addEventListener('mouseleave', () => btn.style.background = 'transparent');
@@ -137,12 +208,12 @@ export class ExportManager {
 
     // Wire actions
     menu.querySelector('[data-action="png"]').addEventListener('click', () => {
-      this.exportAsPNG(`${boardTitle || 'board'}.png`);
       menu.remove();
+      this.exportAsPNG(`${boardTitle || 'board'}.png`);
     });
     menu.querySelector('[data-action="json"]').addEventListener('click', () => {
-      this.exportAsJSON(`${boardTitle || 'board'}.json`);
       menu.remove();
+      this.exportAsJSON(`${boardTitle || 'board'}.json`);
     });
 
     // Dismiss on outside click
