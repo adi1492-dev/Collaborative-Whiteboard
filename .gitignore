@@ -4,10 +4,13 @@ dist/
 dist-ssr/
 *.local
 
-# Go
+# Go build artifacts
 server/bin/
 server/tmp/
 server/main
+server/server
+server/server.exe
+server/server.exe~
 *.exe
 *.exe~
 *.dll
@@ -16,9 +19,21 @@ server/main
 *.test
 *.out
 
-# Environment variables
+# SQLite databases (never commit — contains real user data)
+*.db
+*.db-shm
+*.db-wal
+
+# Uploaded files (use Cloudinary in production)
+server/uploads/
+uploads/
+
+# Environment variables — NEVER commit .env files
 .env
 .env.*
+# But DO commit the examples so teammates know what vars are needed
+!.env.example
+!server/.env.example
 
 # Logs
 logs
