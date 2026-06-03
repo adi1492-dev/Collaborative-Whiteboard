@@ -1,35 +1,35 @@
 # ── Stage 1: Build the Go binary ─────────────────────────────────────────────
+# NOTE: Build context is the REPO ROOT (not server/).
+# Railway sets dockerfilePath = "server/Dockerfile" but context stays at root.
+# All COPY paths must be prefixed with "server/".
 FROM golang:1.23-alpine AS builder
 
-# Install build dependencies for cgo (needed by modernc/sqlite)
+# gcc + musl-dev needed for CGO (modernc/sqlite driver)
 RUN apk add --no-cache gcc musl-dev
 
 WORKDIR /app
 
-# Copy dependency files first for Docker layer caching
-COPY go.mod go.sum ./
+# Copy dependency manifests first (better Docker layer caching)
+COPY server/go.mod server/go.sum ./
 RUN go mod download
 
 # Copy all server source code
-COPY . .
+COPY server/ .
 
-# Build the binary — CGO_ENABLED=1 needed for sqlite driver
-# -ldflags="-s -w" strips debug symbols (smaller binary)
+# Build — CGO_ENABLED=1 required for sqlite, strip debug symbols for smaller binary
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o server .
 
 # ── Stage 2: Minimal production image ────────────────────────────────────────
 FROM alpine:3.19
 
-# ca-certificates for HTTPS outbound calls (Turso, Cloudinary, Gemini)
+# ca-certificates: needed for HTTPS calls to Turso, Cloudinary, Gemini
+# tzdata: needed for correct time zone handling
 RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
-# Copy the compiled binary from the builder stage
 COPY --from=builder /app/server .
 
-# Railway injects PORT via environment variable
 EXPOSE 3001
 
-# Run the server
 CMD ["./server"]
