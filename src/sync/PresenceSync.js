@@ -36,7 +36,7 @@ export class PresenceSync {
   }
 
   _onRemoteCursor(msg) {
-    const userId = msg.clientId || msg.userId;
+    const userId = msg.userId || msg.clientId;
     const pt = msg.payload;
 
     if (!this.cursors.has(userId)) {

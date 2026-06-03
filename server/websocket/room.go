@@ -20,12 +20,29 @@ func NewRoom(boardID string) *Room {
 	}
 }
 
-// AddClient registers a client in this room.
 func (r *Room) AddClient(client *Client) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	
-	if len(r.clients) == 0 {
+	// Remove any existing connections for this user (handles hot-reloads and duplicate tabs)
+	var oldClients []*Client
+	for oldClient := range r.clients {
+		if oldClient.UserID == client.UserID {
+			oldClients = append(oldClients, oldClient)
+		}
+	}
+	
+	for _, oldClient := range oldClients {
+		delete(r.clients, oldClient)
+		close(oldClient.Send)
+		
+		// Reassign host if the host is being replaced (rare, but good practice)
+		if oldClient.IsHost {
+			client.IsHost = true
+		}
+	}
+	
+	if len(r.clients) == 0 && !client.IsHost {
 		client.IsHost = true
 		// Notify the client that they are the host
 		msg := Message{
@@ -36,9 +53,9 @@ func (r *Room) AddClient(client *Client) {
 		case client.Send <- data:
 		default:
 		}
-	} else {
-		client.IsHost = false
-	}
+	} else if len(r.clients) > 0 && client.IsHost {
+        // If there are other clients and this is a new connection, don't inherit host unless explicitly set above
+    }
 	
 	r.clients[client] = true
 }
