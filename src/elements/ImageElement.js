@@ -18,7 +18,12 @@ export class ImageElement extends Element {
 
   _loadImage() {
     this.img = new Image();
-    this.img.crossOrigin = 'anonymous'; // Ensure we can export canvas with images
+    // IMPORTANT: Only set crossOrigin for actual remote URLs.
+    // Setting crossOrigin on data: URIs causes the browser to treat them as
+    // cross-origin and TAINTS the canvas, making toBlob() fail.
+    if (this.src && !this.src.startsWith('data:')) {
+      this.img.crossOrigin = 'anonymous';
+    }
     this.img.onload = () => {
       this.loaded = true;
       // If width/height weren't provided initially, set them based on aspect ratio
@@ -29,8 +34,6 @@ export class ImageElement extends Element {
         this.width = this.img.width * scale;
         this.height = this.img.height * scale;
       }
-      // Assuming we have access to CM to request a render, but typically ElementManager handles this.
-      // Easiest is to fire an event or just rely on the next render cycle.
     };
     this.img.src = this.src;
   }

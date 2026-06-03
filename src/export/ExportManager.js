@@ -1,17 +1,6 @@
 /**
  * ExportManager — Export the whiteboard as PNG or JSON.
- * Fixed:
- * - Waits for document.fonts.ready before rendering text to offscreen canvas
- * - Proper error handling for toBlob (was silently failing)
- * - Replaced alert() with Toast
- * - Appends anchor to body before clicking (Safari/Firefox compatibility)
- * - Guards against zero-size export canvas
  */
-import { FreehandElement } from '../elements/FreehandElement.js';
-import { ShapeElement } from '../elements/ShapeElement.js';
-import { StickyNote } from '../elements/StickyNote.js';
-import { TextElement } from '../elements/TextElement.js';
-
 export class ExportManager {
   constructor(canvasManager, elementManager) {
     this.cm = canvasManager;
@@ -22,133 +11,145 @@ export class ExportManager {
    * Export the entire board as a PNG image.
    */
   async exportAsPNG(filename = 'board.png') {
+    const { Toast } = await import('../ui/Toast.js');
+
+    if (!this.em || !this.em.elements) {
+      Toast.show('Export failed: board not fully loaded yet.', 'error', 4000);
+      return;
+    }
+
     const elements = Array.from(this.em.elements.values()).filter(el => el.visible);
     if (elements.length === 0) {
-      const { Toast } = await import('../ui/Toast.js');
       Toast.show('Nothing to export! Draw something first.', 'warning', 3000);
       return;
     }
 
-    // Compute tight bounding box of all elements
+    // Compute tight bounding box
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const el of elements) {
-      minX = Math.min(minX, el.x);
-      minY = Math.min(minY, el.y);
-      maxX = Math.max(maxX, el.x + (el.width || 0));
-      maxY = Math.max(maxY, el.y + (el.height || 0));
+      const ex = isFinite(el.x) ? el.x : 0;
+      const ey = isFinite(el.y) ? el.y : 0;
+      const ew = isFinite(el.width) ? el.width : 0;
+      const eh = isFinite(el.height) ? el.height : 0;
+      minX = Math.min(minX, ex);
+      minY = Math.min(minY, ey);
+      maxX = Math.max(maxX, ex + ew);
+      maxY = Math.max(maxY, ey + eh);
+    }
+
+    // Guard against degenerate bounds
+    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+      Toast.show('Could not compute board bounds for export.', 'error', 4000);
+      return;
     }
 
     const padding = 48;
-    const exportW = Math.max(1, (maxX - minX) + padding * 2);
-    const exportH = Math.max(1, (maxY - minY) + padding * 2);
-    const dpr = 2; // 2× for retina clarity
+    const exportW = Math.max(10, (maxX - minX) + padding * 2);
+    const exportH = Math.max(10, (maxY - minY) + padding * 2);
+    const dpr = 2;
 
-    // Guard: create canvas
-    const offscreen = document.createElement('canvas');
-    offscreen.width = Math.round(exportW * dpr);
-    offscreen.height = Math.round(exportH * dpr);
-    const ctx = offscreen.getContext('2d');
-    if (!ctx) {
-      const { Toast } = await import('../ui/Toast.js');
-      Toast.show('Your browser does not support canvas export.', 'error', 4000);
-      return;
-    }
-    ctx.scale(dpr, dpr);
+    // Wait for fonts
+    try { await document.fonts.ready; } catch (_) {}
 
-    // Fill background matching current theme
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    ctx.fillStyle = isDark ? '#131313' : '#f8f9ff';
-    ctx.fillRect(0, 0, exportW, exportH);
 
-    // Translate so elements start at padding offset from their bounding box
-    ctx.translate(padding - minX, padding - minY);
+    const drawToCanvas = (skipImages) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(exportW * dpr);
+      canvas.height = Math.round(exportH * dpr);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
 
-    // Wait for fonts to be fully loaded before text rendering
-    // This prevents text appearing as system fallback font on the export
-    try {
-      await document.fonts.ready;
-    } catch (_) {
-      // Non-critical; proceed without guarantee of font loading
-    }
+      ctx.scale(dpr, dpr);
+      ctx.fillStyle = isDark ? '#131313' : '#f8f9ff';
+      ctx.fillRect(0, 0, exportW, exportH);
+      ctx.translate(padding - minX, padding - minY);
 
-    // Render all elements in z-index order
-    for (const el of this.em.sortedElements) {
-      if (!el.visible) continue;
-      ctx.save();
+      const sorted = [...this.em.sortedElements];
+      for (const el of sorted) {
+        if (!el.visible) continue;
+        if (skipImages && el.type === 'image') continue;
 
-      // Apply rotation if needed
-      if (el.rotation !== 0) {
-        const cx = el.x + el.width / 2;
-        const cy = el.y + el.height / 2;
-        ctx.translate(cx, cy);
-        ctx.rotate(el.rotation);
-        ctx.translate(-cx, -cy);
+        ctx.save();
+        try {
+          if (el.rotation !== 0) {
+            const cx = el.x + el.width / 2;
+            const cy = el.y + el.height / 2;
+            ctx.translate(cx, cy);
+            ctx.rotate(el.rotation);
+            ctx.translate(-cx, -cy);
+          }
+          ctx.globalAlpha = el.opacity ?? 1;
+          el.render(ctx);
+        } catch (renderErr) {
+          console.warn('[Export] Skipping element', el.id, 'due to render error:', renderErr.message);
+        }
+        ctx.restore();
       }
 
-      ctx.globalAlpha = el.opacity ?? 1;
+      return canvas;
+    };
 
-      try {
-        el.render(ctx);
-      } catch (err) {
-        console.warn('[Export] Failed to render element:', el.id, err);
-      }
-
-      ctx.restore();
-    }
-
-    // Trigger download via toBlob for best cross-browser compatibility
-    try {
-      const blob = await new Promise((resolve, reject) => {
-        offscreen.toBlob(blob => {
-          if (blob) resolve(blob);
-          else reject(new Error('Canvas toBlob returned null — canvas may be tainted by cross-origin images'));
-        }, 'image/png');
-      });
-
-      const url = URL.createObjectURL(blob);
+    // Try with images first, then without if tainted
+    const download = (dataUrl) => {
       const a = document.createElement('a');
-      a.href = url;
+      a.href = dataUrl;
       a.download = filename;
-      // Must append to body first for Firefox compatibility
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
 
-      const { Toast } = await import('../ui/Toast.js');
+    // First attempt: all elements
+    try {
+      const canvas = drawToCanvas(false);
+      if (!canvas) throw new Error('Could not create canvas context');
+
+      let dataUrl;
+      try {
+        dataUrl = canvas.toDataURL('image/png');
+      } catch (taintErr) {
+        // Canvas is tainted — retry without images
+        console.warn('[Export] Canvas tainted, retrying without images:', taintErr.message);
+        const canvas2 = drawToCanvas(true);
+        if (!canvas2) throw new Error('Could not create fallback canvas');
+        dataUrl = canvas2.toDataURL('image/png');
+        download(dataUrl);
+        Toast.show('Exported PNG (images excluded — cross-origin restriction)', 'warning', 5000);
+        return;
+      }
+
+      if (!dataUrl || dataUrl === 'data:,') {
+        throw new Error('Empty canvas data URL');
+      }
+
+      download(dataUrl);
       Toast.show('Exported as PNG!', 'success', 2000);
     } catch (err) {
       console.error('[Export] PNG export failed:', err);
-      const { Toast } = await import('../ui/Toast.js');
-      Toast.show(
-        err.message.includes('tainted')
-          ? 'Export failed: canvas contains cross-origin images.'
-          : 'PNG export failed. Please try again.',
-        'error',
-        5000
-      );
+      Toast.show(`PNG export failed: ${err.message}`, 'error', 5000);
     }
   }
 
   /**
-   * Export board data as JSON (for backup/import).
+   * Export board data as JSON.
    */
   async exportAsJSON(filename = 'board.json') {
-    const elements = Array.from(this.em.elements.values()).map(el => el.toJSON());
+    const { Toast } = await import('../ui/Toast.js');
+
+    const elements = Array.from(this.em.elements.values()).map(el => {
+      try { return el.toJSON(); } catch (_) { return null; }
+    }).filter(Boolean);
+
     if (elements.length === 0) {
-      const { Toast } = await import('../ui/Toast.js');
       Toast.show('Nothing to export! Draw something first.', 'warning', 3000);
       return;
     }
 
-    const data = {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      elements
-    };
-
     try {
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const data = { version: '1.0', exportedAt: new Date().toISOString(), elements };
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -157,12 +158,9 @@ export class ExportManager {
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-      const { Toast } = await import('../ui/Toast.js');
       Toast.show('Exported as JSON!', 'success', 2000);
     } catch (err) {
       console.error('[Export] JSON export failed:', err);
-      const { Toast } = await import('../ui/Toast.js');
       Toast.show('JSON export failed. Please try again.', 'error', 3000);
     }
   }
@@ -171,7 +169,6 @@ export class ExportManager {
    * Show export dropdown menu.
    */
   showExportMenu(anchorEl, boardTitle) {
-    // Toggle: remove if already open
     const existing = document.getElementById('export-dropdown');
     if (existing) { existing.remove(); return; }
 
@@ -194,19 +191,16 @@ export class ExportManager {
       </button>
     `).join('');
 
-    // Position below anchor button
     const rect = anchorEl.getBoundingClientRect();
     menu.style.top = `${rect.bottom + 6}px`;
     menu.style.right = `${window.innerWidth - rect.right}px`;
     document.body.appendChild(menu);
 
-    // Hover effects
     menu.querySelectorAll('button').forEach(btn => {
       btn.addEventListener('mouseenter', () => btn.style.background = 'rgba(192,193,255,0.1)');
       btn.addEventListener('mouseleave', () => btn.style.background = 'transparent');
     });
 
-    // Wire actions
     menu.querySelector('[data-action="png"]').addEventListener('click', () => {
       menu.remove();
       this.exportAsPNG(`${boardTitle || 'board'}.png`);
@@ -216,7 +210,6 @@ export class ExportManager {
       this.exportAsJSON(`${boardTitle || 'board'}.json`);
     });
 
-    // Dismiss on outside click
     const dismiss = (e) => {
       if (!menu.contains(e.target) && e.target !== anchorEl) {
         menu.remove();
