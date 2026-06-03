@@ -195,12 +195,22 @@ func (c *Client) handleMessage(msg Message) {
 		// TODO: Send full board state from DB
 		log.Printf("Sync request from %s in room %s", c.UserName, c.BoardID)
 
-	case "element_delete":
-		var payload struct {
-			ElementID string `json:"elementId"`
+	case "element_create", "element_update", "element_delete", "cursor_move":
+		// WebSocket fallback relay: If WebRTC P2P fails, clients send these messages over WS.
+		// The server acts as a standard relay and broadcasts them to all OTHER clients.
+		if c.Room != nil {
+			// Broadcast to room (exclude sender)
+			c.Room.Broadcast(msg, c)
 		}
-		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.ElementID != "" {
-			_ = database.SQLiteDeleteElement(c.BoardID, payload.ElementID)
+
+		// Keep DB delete logic for element_delete
+		if msg.Type == "element_delete" {
+			var payload struct {
+				ElementID string `json:"elementId"`
+			}
+			if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.ElementID != "" {
+				_ = database.SQLiteDeleteElement(c.BoardID, payload.ElementID)
+			}
 		}
 
 	default:

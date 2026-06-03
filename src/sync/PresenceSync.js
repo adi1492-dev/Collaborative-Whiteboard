@@ -24,13 +24,19 @@ export class PresenceSync {
 
     const now = Date.now();
     if (now - this.lastSendTime > this.sendThrottle) {
+      const user = this.cm.syncManager?.app.auth.getUser();
+      const userName = user ? (user.displayName || user.name || 'Collaborator') : 'Collaborator';
+      const userId = user ? (user.id || user.$id || user.uid) : (this.ws?.clientId || 'unknown');
+      const payload = { x: worldX, y: worldY, userName, userId };
+
       if (this.p2p) {
-        const user = this.cm.syncManager?.app.auth.getUser();
-        const userName = user ? (user.displayName || user.name || 'Collaborator') : 'Collaborator';
-        const userId = user ? (user.id || user.$id || user.uid) : (this.ws?.clientId || 'unknown');
-        this.p2p.broadcast('cursor_move', { x: worldX, y: worldY, userName, userId });
+        const sent = this.p2p.broadcast('cursor_move', payload);
+        // Fallback to WS if any peer is missing from P2P network
+        if (this.cm.syncManager && this.cm.syncManager._getMissingP2PCount(sent) > 0) {
+          this.ws.send('cursor_move', payload);
+        }
       } else {
-        this.ws.send('cursor_move', { x: worldX, y: worldY });
+        this.ws.send('cursor_move', payload);
       }
       this.lastSendTime = now;
     }

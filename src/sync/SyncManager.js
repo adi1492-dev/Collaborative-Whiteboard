@@ -32,9 +32,10 @@ export class SyncManager {
     // In production (Vercel + Railway), VITE_API_URL points to the Railway backend.
     // In development, it falls back to window.location.host (proxied by Vite).
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const apiHost = import.meta.env.VITE_API_URL
+    const apiHostRaw = import.meta.env.VITE_API_URL
       ? import.meta.env.VITE_API_URL.replace(/^https?:\/\//, '') // strip protocol if present
       : window.location.host;
+    const apiHost = apiHostRaw.replace(/\/$/, ''); // strip trailing slash to prevent //ws/board/
     const url = `${wsProtocol}//${apiHost}/ws/board/${boardId}`;
 
     this.ws = new WebSocketClient(url, () => this.app.auth.getAccessToken());
@@ -152,10 +153,17 @@ export class SyncManager {
 
   // --- Outgoing (Local -> Remote P2P) ---
 
+  _getMissingP2PCount(sentCount) {
+    const totalOtherUsers = Array.from(this.activeUsers.values()).reduce((acc, set) => acc + set.size, 0);
+    return totalOtherUsers - sentCount;
+  }
+
   broadcastCreate(element) {
     element.updatedAt = this._tickClock();
     const json = element.toJSON();
-    this.p2p.broadcast('element_create', json); // P2P
+    const sent = this.p2p.broadcast('element_create', json); // P2P
+    if (this._getMissingP2PCount(sent) > 0) this.ws.send('element_create', json); // WS Fallback
+
     this.dirtyElements.set(element.id, json);
     this._scheduleAutoSave();
   }
@@ -163,24 +171,28 @@ export class SyncManager {
   broadcastUpdate(element) {
     element.updatedAt = this._tickClock();
     const json = element.toJSON();
-    this.p2p.broadcast('element_update', json); // P2P
+    const sent = this.p2p.broadcast('element_update', json); // P2P
+    if (this._getMissingP2PCount(sent) > 0) this.ws.send('element_update', json); // WS Fallback
+
     this.dirtyElements.set(element.id, json);
     this._scheduleAutoSave();
   }
 
   broadcastDelete(elementId) {
-    this.p2p.broadcast('element_delete', { // P2P
-      elementId,
-      updatedAt: this._tickClock()
-    });
-    // BUG-003 fix: host sends to server but tracks it to avoid echo processing
-    if (this.isHost) {
-      this._recentlyForwardedDeletes.add(elementId);
-      setTimeout(() => this._recentlyForwardedDeletes.delete(elementId), 5000);
-      this.ws.send('element_delete', { elementId });
+    const payload = { elementId, updatedAt: this._tickClock() };
+    const sent = this.p2p.broadcast('element_delete', payload); // P2P
+    
+    // Fallback to WS if any peer missed it, or if we are host (host always sends to trigger DB delete)
+    if (this._getMissingP2PCount(sent) > 0 || this.isHost) {
+      if (this.isHost) {
+        // Track forwarded deletes to avoid processing echo
+        this._recentlyForwardedDeletes.add(elementId);
+        setTimeout(() => this._recentlyForwardedDeletes.delete(elementId), 5000);
+      }
+      this.ws.send('element_delete', payload);
     }
+    
     this.dirtyElements.delete(elementId);
-    // BUG-018 fix: only schedule save if there is still something to save
     if (this.dirtyElements.size > 0) {
       this._scheduleAutoSave();
     }
