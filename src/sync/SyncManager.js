@@ -10,6 +10,8 @@ import { ShapeElement } from '../elements/ShapeElement.js';
 import { StickyNote } from '../elements/StickyNote.js';
 import { TextElement } from '../elements/TextElement.js';
 import { ImageElement } from '../elements/ImageElement.js';
+import { CommentElement } from '../elements/CommentElement.js';
+import { UIElement } from '../elements/UIElement.js';
 import { Element } from '../elements/Element.js';
 import { WebRTCManager } from './WebRTCManager.js';
 
@@ -334,6 +336,13 @@ export class SyncManager {
         // Re-load image if src changed (e.g. replaced image)
         localEl.src = remoteEl.src;
         localEl._loadImage && localEl._loadImage();
+      } else if (remoteEl.type === 'comment') {
+        localEl.text = remoteEl.text;
+        localEl.resolved = remoteEl.resolved;
+      } else if (remoteEl.type === 'ui') {
+        localEl.component = remoteEl.component;
+        localEl.props = { ...remoteEl.props };
+        localEl.uiTheme = remoteEl.uiTheme;
       }
 
       localEl.updatedAt = remoteEl.updatedAt;
@@ -374,6 +383,10 @@ export class SyncManager {
         return new TextElement(data);
       case 'image':
         return new ImageElement(data);
+      case 'comment':
+        return new CommentElement(data);
+      case 'ui':
+        return new UIElement(data);
       default:
         console.warn('[SyncManager] Unknown element type:', data.type);
         return null; // Reject unknown types rather than creating a broken base Element

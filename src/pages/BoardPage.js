@@ -13,9 +13,14 @@ import { TextEditor } from '../ui/TextEditor.js';
 import { ContextMenu } from '../ui/ContextMenu.js';
 import { CommandPalette } from '../ui/CommandPalette.js';
 import { TemplateEngine } from '../plugins/templates/TemplateEngine.js';
+import { TemplateModal } from '../ui/TemplateModal.js';
+import { CommentPanel } from '../ui/CommentPanel.js';
 import { AIManager } from '../ai/AIManager.js';
 import { HistoryManager } from '../history/HistoryManager.js';
 import { ExportManager } from '../export/ExportManager.js';
+import { CommentElement } from '../elements/CommentElement.js';
+import { UIElement, UI_COMPONENTS } from '../elements/UIElement.js';
+import { generateId } from '../utils/uid.js';
 import { Toast } from '../ui/Toast.js';
 
 // Tools
@@ -247,11 +252,27 @@ export class BoardPage {
     // 11.5 Command Palette
     this.commandPalette = new CommandPalette(this, this.ih, this.cm);
 
-    // 11.6 Template Engine
+    // 11.6 Template Engine (existing plugin) + new TemplateModal
     this.templateEngine = new TemplateEngine(this);
+    this.templateModal = new TemplateModal(this.sync, this.em, this.cm);
     this.root.querySelector('#templates-btn')?.addEventListener('click', () => {
-      this.templateEngine.open();
+      this.templateModal.show();
     });
+
+    // 11.7 Comment Panel
+    this.commentPanel = new CommentPanel(this.sync, this.em, this.app.auth);
+
+    // Wire comment bubbles: clicking a CommentElement opens the panel
+    const origGetElementAt = this.em.getElementAt.bind(this.em);
+    this.ih.on?.('element_clicked', (el) => {
+      if (el?.type === 'comment') this.commentPanel.open(el);
+    });
+
+    // 11.8 UI Builder Panel — floating sidebar
+    this._initUIBuilderPanel();
+
+    // 11.9 Background Settings button
+    this._initBackgroundSettings();
 
     // Dynamic property panel
     const originalSetActive = this.ih.setActiveTool.bind(this.ih);
@@ -798,6 +819,195 @@ export class BoardPage {
       }
     `;
     document.head.appendChild(style);
+  }
+
+  _initUIBuilderPanel() {
+    const headerRight = this.root.querySelector('.header-right');
+    if (!headerRight) return;
+
+    // Add UI Builder toggle button
+    const uiBtn = document.createElement('button');
+    uiBtn.className = 'btn btn-outline';
+    uiBtn.id = 'ui-builder-btn';
+    uiBtn.title = 'UI Builder Mode';
+    uiBtn.style.cssText = 'padding:6px 12px;height:auto;';
+    uiBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size:16px;margin-right:4px;">widgets</span>UI Builder`;
+    headerRight.insertBefore(uiBtn, headerRight.querySelector('#export-btn'));
+
+    // Create UI Builder panel
+    const panel = document.createElement('div');
+    panel.id = 'ui-builder-panel';
+    panel.className = 'glass elevation-3';
+    panel.style.cssText = `
+      position: fixed; left: 72px; top: 72px;
+      width: 200px; border-radius: 14px; padding: 14px;
+      display: none; flex-direction: column; gap: 6px;
+      z-index: 9500; max-height: calc(100vh - 100px); overflow-y: auto;
+    `;
+
+    const categories = {
+      'Form Controls': ['button', 'input', 'toggle', 'dropdown'],
+      'Layout': ['card', 'navbar', 'modal'],
+      'Display': ['badge'],
+    };
+
+    panel.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:6px;letter-spacing:0.5px;">UI COMPONENTS</div>`;
+
+    Object.entries(categories).forEach(([cat, items]) => {
+      panel.innerHTML += `<div style="font-size:10px;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:0.5px;margin-top:6px;margin-bottom:2px;">${cat}</div>`;
+      items.forEach(component => {
+        const def = UI_COMPONENTS[component];
+        const btn = document.createElement('button');
+        btn.className = 'cm-item';
+        btn.dataset.component = component;
+        btn.style.cssText = 'width:100%;border:1px solid var(--outline-variant);border-radius:8px;padding:8px 10px;margin-bottom:2px;cursor:grab;text-align:left;';
+        btn.innerHTML = `
+          <span class="material-symbols-outlined" style="font-size:14px;color:var(--primary)">smart_button</span>
+          <span style="font-size:12px;">${def.label}</span>
+        `;
+        btn.title = `Drag to place ${def.label}`;
+        btn.addEventListener('click', () => {
+          // Place component at center of viewport
+          if (!this.cm || !this.sync || !this.em) return;
+          const scale = this.cm.transform.scale;
+          const cx = (this.cm.width / 2 - this.cm.transform.panX) / scale;
+          const cy = (this.cm.height / 2 - this.cm.transform.panY) / scale;
+
+          const el = new UIElement({
+            id: generateId(),
+            component,
+            x: cx - def.defaultWidth / 2,
+            y: cy - def.defaultHeight / 2,
+            width: def.defaultWidth,
+            height: def.defaultHeight,
+            zIndex: Date.now(),
+            props: { ...def.defaultProps },
+            uiTheme: document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
+          });
+
+          this.em.setElement(el);
+          this.sync.broadcastCreate(el);
+          Toast.show(`${def.label} added to canvas`, 'success', 1500);
+        });
+        panel.appendChild(btn);
+      });
+    });
+
+    // Theme toggle for UI elements
+    const themeRow = document.createElement('div');
+    themeRow.style.cssText = 'margin-top:10px;padding-top:10px;border-top:1px solid var(--outline-variant);';
+    themeRow.innerHTML = `
+      <div style="font-size:10px;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Component Theme</div>
+      <div style="display:flex;gap:6px;">
+        <button id="ui-theme-dark" class="btn-primary" style="flex:1;font-size:11px;padding:6px;">Dark</button>
+        <button id="ui-theme-light" class="btn btn-outline" style="flex:1;font-size:11px;padding:6px;">Light</button>
+      </div>
+    `;
+    panel.appendChild(themeRow);
+
+    document.body.appendChild(panel);
+    this._uiBuilderTheme = 'dark';
+
+    panel.querySelector('#ui-theme-dark')?.addEventListener('click', () => { this._uiBuilderTheme = 'dark'; });
+    panel.querySelector('#ui-theme-light')?.addEventListener('click', () => { this._uiBuilderTheme = 'light'; });
+
+    let panelVisible = false;
+    uiBtn.addEventListener('click', () => {
+      panelVisible = !panelVisible;
+      panel.style.display = panelVisible ? 'flex' : 'none';
+      uiBtn.style.background = panelVisible ? 'rgba(192,193,255,0.15)' : '';
+      uiBtn.style.borderColor = panelVisible ? 'var(--primary)' : '';
+    });
+  }
+
+  _initBackgroundSettings() {
+    const headerRight = this.root.querySelector('.header-right');
+    if (!headerRight) return;
+
+    const settingsBtn = document.createElement('button');
+    settingsBtn.className = 'icon-btn';
+    settingsBtn.id = 'bg-settings-btn';
+    settingsBtn.title = 'Canvas Settings';
+    settingsBtn.innerHTML = `<span class="material-symbols-outlined">tune</span>`;
+    headerRight.insertBefore(settingsBtn, headerRight.firstChild);
+
+    settingsBtn.addEventListener('click', (e) => {
+      const existing = document.getElementById('bg-settings-popup');
+      if (existing) { existing.remove(); return; }
+
+      const popup = document.createElement('div');
+      popup.id = 'bg-settings-popup';
+      popup.className = 'glass elevation-3';
+      popup.style.cssText = `
+        position: fixed; z-index: 9800;
+        right: 16px; top: 64px;
+        width: 220px; border-radius: 14px; padding: 16px;
+      `;
+
+      const currentBg = this.cm?.backgroundType || 'grid';
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+      popup.innerHTML = `
+        <div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:12px;letter-spacing:0.5px;">CANVAS SETTINGS</div>
+
+        <div style="font-size:11px;color:var(--on-surface-variant);margin-bottom:8px;">Background</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+          ${[['grid','Grid','grid_on'], ['dots','Dots','more_horiz'], ['lines','Lines','format_list_bulleted'], ['blank','None','crop_square']].map(([val,lbl,icon]) => `
+            <button data-bg="${val}" class="bg-opt-btn" style="
+              padding:8px;border-radius:8px;border:2px solid ${currentBg===val?'var(--primary)':'var(--outline-variant)'};
+              background:${currentBg===val?'rgba(192,193,255,0.1)':'transparent'};
+              cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;
+              color:${currentBg===val?'var(--primary)':'var(--on-surface-variant)'};font-size:11px;
+            ">
+              <span class="material-symbols-outlined" style="font-size:18px">${icon}</span>${lbl}
+            </button>
+          `).join('')}
+        </div>
+
+        <div style="height:1px;background:var(--outline-variant);margin-bottom:12px;"></div>
+        <div style="font-size:11px;color:var(--on-surface-variant);margin-bottom:8px;">Theme</div>
+        <div style="display:flex;gap:6px;">
+          <button id="theme-dark-btn" style="flex:1;padding:8px;border-radius:8px;border:2px solid ${isDark?'var(--primary)':'var(--outline-variant)'};background:${isDark?'rgba(192,193,255,0.1)':'transparent'};cursor:pointer;font-size:11px;color:${isDark?'var(--primary)':'var(--on-surface-variant)'};">
+            🌙 Dark
+          </button>
+          <button id="theme-light-btn" style="flex:1;padding:8px;border-radius:8px;border:2px solid ${!isDark?'var(--primary)':'var(--outline-variant)'};background:${!isDark?'rgba(192,193,255,0.1)':'transparent'};cursor:pointer;font-size:11px;color:${!isDark?'var(--primary)':'var(--on-surface-variant)'};">
+            ☀️ Light
+          </button>
+        </div>
+      `;
+
+      document.body.appendChild(popup);
+
+      popup.querySelectorAll('.bg-opt-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.cm?.setBackground(btn.dataset.bg);
+          popup.querySelectorAll('.bg-opt-btn').forEach(b => {
+            b.style.borderColor = b === btn ? 'var(--primary)' : 'var(--outline-variant)';
+            b.style.background = b === btn ? 'rgba(192,193,255,0.1)' : 'transparent';
+            b.style.color = b === btn ? 'var(--primary)' : 'var(--on-surface-variant)';
+          });
+        });
+      });
+
+      popup.querySelector('#theme-dark-btn')?.addEventListener('click', () => {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('canvasflow-theme', 'dark');
+        popup.remove();
+      });
+      popup.querySelector('#theme-light-btn')?.addEventListener('click', () => {
+        document.documentElement.setAttribute('data-theme', 'light');
+        localStorage.setItem('canvasflow-theme', 'light');
+        popup.remove();
+      });
+
+      const dismiss = (ev) => {
+        if (!popup.contains(ev.target) && ev.target !== settingsBtn) {
+          popup.remove();
+          document.removeEventListener('pointerdown', dismiss);
+        }
+      };
+      setTimeout(() => document.addEventListener('pointerdown', dismiss), 50);
+    });
   }
 
   // Lifecycle: marks this page as destroyed and tears down all managers.

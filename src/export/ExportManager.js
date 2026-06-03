@@ -246,6 +246,212 @@ export class ExportManager {
     );
   }
 
+  // ─── SVG Export ───────────────────────────────────────────────────────────────
+
+  async exportAsSVG(filename = 'board.svg') {
+    const { Toast } = await import('../ui/Toast.js');
+
+    if (!this.em?.elements) {
+      Toast.show('Export failed: board not fully loaded.', 'error', 4000);
+      return;
+    }
+
+    const elements = Array.from(this.em.elements.values()).filter(el => el.visible && el.type !== 'comment');
+    if (elements.length === 0) {
+      Toast.show('Nothing to export! Draw something first.', 'warning', 3000);
+      return;
+    }
+
+    // Bounding box
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of elements) {
+      const ex = isFinite(el.x) ? el.x : 0;
+      const ey = isFinite(el.y) ? el.y : 0;
+      const ew = isFinite(el.width) ? el.width : 0;
+      const eh = isFinite(el.height) ? el.height : 0;
+      minX = Math.min(minX, ex); minY = Math.min(minY, ey);
+      maxX = Math.max(maxX, ex + ew); maxY = Math.max(maxY, ey + eh);
+    }
+    const pad = 48;
+    const vw = maxX - minX + pad * 2;
+    const vh = maxY - minY + pad * 2;
+    const ox = minX - pad; // world origin offset
+    const oy = minY - pad;
+
+    const escape = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    const svgParts = [];
+
+    for (const el of elements.sort((a, b) => a.zIndex - b.zIndex)) {
+      const x = (el.x - ox).toFixed(2);
+      const y = (el.y - oy).toFixed(2);
+      const w = el.width.toFixed(2);
+      const h = el.height.toFixed(2);
+      const stroke = el.style?.strokeColor || 'none';
+      const fill = el.style?.fillColor || 'none';
+      const sw = el.style?.strokeWidth || 1;
+      const opacity = el.opacity || 1;
+      const rot = el.rotation ? ` transform="rotate(${(el.rotation * 180 / Math.PI).toFixed(2)},${(+x + +w / 2).toFixed(2)},${(+y + +h / 2).toFixed(2)})"` : '';
+
+      if (el.type === 'shape') {
+        const shape = el.shapeType || 'rect';
+        if (shape === 'ellipse') {
+          svgParts.push(`<ellipse cx="${(+x + +w/2).toFixed(2)}" cy="${(+y + +h/2).toFixed(2)}" rx="${(+w/2).toFixed(2)}" ry="${(+h/2).toFixed(2)}" fill="${escape(fill)}" stroke="${escape(stroke)}" stroke-width="${sw}" opacity="${opacity}"${rot}/>`);
+        } else {
+          const rx = shape === 'rounded-rect' ? '8' : '0';
+          svgParts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${escape(fill)}" stroke="${escape(stroke)}" stroke-width="${sw}" opacity="${opacity}"${rot}/>`);
+        }
+        if (el.text) {
+          svgParts.push(`<text x="${(+x + +w/2).toFixed(2)}" y="${(+y + +h/2).toFixed(2)}" text-anchor="middle" dominant-baseline="middle" font-family="Inter, sans-serif" font-size="${el.style?.fontSize || 14}" fill="${escape(el.style?.strokeColor || '#ffffff')}" opacity="${opacity}"${rot}>${escape(el.text)}</text>`);
+        }
+      } else if (el.type === 'sticky' || el.type === 'text') {
+        const bgColor = fill !== 'none' && fill !== 'transparent' ? fill : 'rgba(192,193,255,0.12)';
+        if (el.type === 'sticky') {
+          svgParts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${escape(bgColor)}" opacity="${opacity}"${rot}/>`);
+        }
+        svgParts.push(`<foreignObject x="${x}" y="${y}" width="${w}" height="${h}"${rot}><div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Inter,sans-serif;font-size:${el.style?.fontSize || 14}px;color:white;padding:12px;overflow:hidden;opacity:${opacity}">${escape(el.text || '')}</div></foreignObject>`);
+      } else if (el.type === 'freehand') {
+        const pts = el.points || [];
+        if (pts.length >= 2) {
+          const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${(p.x - ox).toFixed(1)},${(p.y - oy).toFixed(1)}`).join(' ');
+          svgParts.push(`<path d="${d}" fill="none" stroke="${escape(stroke)}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"${rot}/>`);
+        }
+      }
+    }
+
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const svgContent = [
+      `<?xml version="1.0" encoding="UTF-8"?>`,
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xhtml="http://www.w3.org/1999/xhtml" width="${vw.toFixed(2)}" height="${vh.toFixed(2)}" viewBox="0 0 ${vw.toFixed(2)} ${vh.toFixed(2)}">`,
+      `<rect width="100%" height="100%" fill="${isDark ? '#131313' : '#f8f9ff'}"/>`,
+      ...svgParts,
+      `</svg>`,
+    ].join('\n');
+
+    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    this._download(url, filename, true);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    Toast.show('SVG exported! Opens crisp at any zoom level.', 'success', 3000);
+  }
+
+  // ─── SVG Import ───────────────────────────────────────────────────────────────
+
+  async importFromSVG() {
+    const { Toast } = await import('../ui/Toast.js');
+    const { generateId } = await import('../utils/uid.js');
+
+    const file = await this._pickFile('.svg,image/svg+xml');
+    if (!file) return;
+
+    const text = await file.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'image/svg+xml');
+    const svgEl = doc.querySelector('svg');
+    if (!svgEl) {
+      Toast.show('Invalid SVG file.', 'error', 3000);
+      return;
+    }
+
+    const imported = [];
+    const now = Date.now();
+
+    // Calculate viewport center for centering the import
+    const scale = this.cm?.transform?.scale || 1;
+    const panX = this.cm?.transform?.panX || 0;
+    const panY = this.cm?.transform?.panY || 0;
+    const viewCX = ((this.cm?.width || 800) / 2 - panX) / scale;
+    const viewCY = ((this.cm?.height || 600) / 2 - panY) / scale;
+
+    const parseNum = (v) => parseFloat(v) || 0;
+
+    // Convert SVG rects -> ShapeElement
+    doc.querySelectorAll('rect').forEach(el => {
+      if (el.closest('defs')) return;
+      imported.push(this.sync._hydrateElement({
+        id: generateId(), type: 'shape',
+        x: viewCX + parseNum(el.getAttribute('x')),
+        y: viewCY + parseNum(el.getAttribute('y')),
+        width: parseNum(el.getAttribute('width')) || 100,
+        height: parseNum(el.getAttribute('height')) || 60,
+        shapeType: parseNum(el.getAttribute('rx')) > 0 ? 'rounded-rect' : 'rect',
+        text: '', zIndex: imported.length, opacity: 1, visible: true, locked: false, rotation: 0,
+        style: { fillColor: el.getAttribute('fill') || 'transparent', strokeColor: el.getAttribute('stroke') || '#c0c1ff', strokeWidth: parseNum(el.getAttribute('stroke-width')) || 1, fontSize: 14 },
+        createdAt: now, updatedAt: now, createdBy: null
+      }));
+    });
+
+    // Convert SVG ellipses -> ShapeElement
+    doc.querySelectorAll('ellipse, circle').forEach(el => {
+      if (el.closest('defs')) return;
+      const rx = parseNum(el.getAttribute('rx') || el.getAttribute('r'));
+      const ry = parseNum(el.getAttribute('ry') || el.getAttribute('r'));
+      const cx = parseNum(el.getAttribute('cx'));
+      const cy = parseNum(el.getAttribute('cy'));
+      imported.push(this.sync._hydrateElement({
+        id: generateId(), type: 'shape',
+        x: viewCX + cx - rx, y: viewCY + cy - ry,
+        width: rx * 2, height: ry * 2, shapeType: 'ellipse',
+        text: '', zIndex: imported.length, opacity: 1, visible: true, locked: false, rotation: 0,
+        style: { fillColor: el.getAttribute('fill') || 'transparent', strokeColor: el.getAttribute('stroke') || '#c0c1ff', strokeWidth: parseNum(el.getAttribute('stroke-width')) || 1, fontSize: 14 },
+        createdAt: now, updatedAt: now, createdBy: null
+      }));
+    });
+
+    // Convert SVG paths -> FreehandElement
+    doc.querySelectorAll('path').forEach(el => {
+      if (el.closest('defs')) return;
+      const d = el.getAttribute('d') || '';
+      const pts = [];
+      const tokens = d.match(/[MLCQZmlcqz][^MLCQZmlcqz]*/g) || [];
+      let curX = 0, curY = 0;
+      for (const tok of tokens) {
+        const cmd = tok[0];
+        const nums = tok.slice(1).trim().split(/[,\s]+/).map(Number).filter(n => !isNaN(n));
+        if (cmd === 'M' || cmd === 'L') { curX = nums[0] || 0; curY = nums[1] || 0; pts.push({ x: viewCX + curX, y: viewCY + curY, pressure: 0.5 }); }
+        else if (cmd === 'm' || cmd === 'l') { curX += nums[0] || 0; curY += nums[1] || 0; pts.push({ x: viewCX + curX, y: viewCY + curY, pressure: 0.5 }); }
+      }
+      if (pts.length >= 2) {
+        imported.push(this.sync._hydrateElement({
+          id: generateId(), type: 'freehand', x: pts[0].x, y: pts[0].y, width: 1, height: 1,
+          points: pts, zIndex: imported.length, opacity: 1, visible: true, locked: false, rotation: 0,
+          style: { strokeColor: el.getAttribute('stroke') || '#c0c1ff', strokeWidth: parseNum(el.getAttribute('stroke-width')) || 2, fillColor: 'none', fontSize: 14 },
+          createdAt: now, updatedAt: now, createdBy: null
+        }));
+      }
+    });
+
+    // Convert SVG text -> TextElement
+    doc.querySelectorAll('text').forEach(el => {
+      if (el.closest('defs')) return;
+      const content = el.textContent?.trim();
+      if (!content) return;
+      imported.push(this.sync._hydrateElement({
+        id: generateId(), type: 'text',
+        x: viewCX + parseNum(el.getAttribute('x')),
+        y: viewCY + parseNum(el.getAttribute('y')),
+        width: 300, height: 32, text: content,
+        zIndex: imported.length, opacity: 1, visible: true, locked: false, rotation: 0,
+        style: { strokeColor: el.getAttribute('fill') || '#c0c1ff', fillColor: 'transparent', strokeWidth: 0, fontSize: parseNum(el.getAttribute('font-size')) || 14, fontFamily: 'Inter, sans-serif' },
+        createdAt: now, updatedAt: now, createdBy: null
+      }));
+    });
+
+    const valid = imported.filter(Boolean);
+    if (valid.length === 0) {
+      Toast.show('No supported shapes found in SVG (rect, ellipse, path, text).', 'warning', 4000);
+      return;
+    }
+
+    if (this.history) this.history.snapshot('import_svg');
+    for (const el of valid) {
+      this.em.setElement(el);
+      this.sync.broadcastCreate(el);
+    }
+    setTimeout(() => this.cm?.zoomToFit(), 100);
+    Toast.show(`✅ Imported ${valid.length} elements from SVG!`, 'success', 3000);
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   /** Create and click a download anchor. Pass isUrl=true for blob URLs, false for data URLs. */
@@ -298,10 +504,12 @@ export class ExportManager {
     `;
 
     const items = [
-      { icon: 'image',       label: 'Export as PNG',      action: 'png' },
-      { icon: 'data_object', label: 'Export as JSON',     action: 'json' },
+      { icon: 'image',        label: 'Export as PNG',      action: 'png' },
+      { icon: 'code',         label: 'Export as SVG',      action: 'svg' },
+      { icon: 'data_object',  label: 'Export as JSON',     action: 'json' },
       { icon: 'divider' },
-      { icon: 'upload_file', label: 'Import from JSON',   action: 'import' },
+      { icon: 'upload_file',  label: 'Import from JSON',   action: 'import' },
+      { icon: 'svg',          label: 'Import from SVG',    action: 'import-svg' },
     ];
 
     menu.innerHTML = items.map(item => {
@@ -334,11 +542,17 @@ export class ExportManager {
     menu.querySelector('[data-action="png"]')?.addEventListener('click', () => {
       close(); this.exportAsPNG(`${boardTitle || 'board'}.png`);
     });
+    menu.querySelector('[data-action="svg"]')?.addEventListener('click', () => {
+      close(); this.exportAsSVG(`${boardTitle || 'board'}.svg`);
+    });
     menu.querySelector('[data-action="json"]')?.addEventListener('click', () => {
       close(); this.exportAsJSON(`${boardTitle || 'board'}.json`);
     });
     menu.querySelector('[data-action="import"]')?.addEventListener('click', () => {
       close(); this.importFromJSON();
+    });
+    menu.querySelector('[data-action="import-svg"]')?.addEventListener('click', () => {
+      close(); this.importFromSVG();
     });
 
     const dismiss = (e) => {
