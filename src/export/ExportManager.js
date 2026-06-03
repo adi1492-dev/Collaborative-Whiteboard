@@ -14,7 +14,7 @@ export class ExportManager {
     const { Toast } = await import('../ui/Toast.js');
 
     if (!this.em || !this.em.elements) {
-      Toast.show('Export failed: board not fully loaded yet.', 'error', 4000);
+      Toast.show('Export failed: board not fully loaded.', 'error', 4000);
       return;
     }
 
@@ -24,7 +24,7 @@ export class ExportManager {
       return;
     }
 
-    // Compute tight bounding box
+    // Compute bounding box with NaN/Infinity guards
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const el of elements) {
       const ex = isFinite(el.x) ? el.x : 0;
@@ -37,16 +37,32 @@ export class ExportManager {
       maxY = Math.max(maxY, ey + eh);
     }
 
-    // Guard against degenerate bounds
-    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
-      Toast.show('Could not compute board bounds for export.', 'error', 4000);
-      return;
-    }
+    if (!isFinite(minX)) { minX = 0; maxX = 800; }
+    if (!isFinite(minY)) { minY = 0; maxY = 600; }
 
     const padding = 48;
-    const exportW = Math.max(10, (maxX - minX) + padding * 2);
-    const exportH = Math.max(10, (maxY - minY) + padding * 2);
-    const dpr = 2;
+    let exportW = (maxX - minX) + padding * 2;
+    let exportH = (maxY - minY) + padding * 2;
+
+    // -------------------------------------------------------------------
+    // CRITICAL: Browsers cap canvas at ~16384px per side. If the canvas
+    // exceeds this, the browser silently sets its size to 0 and
+    // toDataURL() returns 'data:,' (an empty result).
+    // We scale down to fit within the limit while preserving aspect ratio.
+    // -------------------------------------------------------------------
+    const MAX_CANVAS_PX = 8192; // Safe limit (half of absolute max)
+    let pixelRatio = 2; // Default 2× for retina quality
+
+    const rawW = exportW * pixelRatio;
+    const rawH = exportH * pixelRatio;
+
+    if (rawW > MAX_CANVAS_PX || rawH > MAX_CANVAS_PX) {
+      // Scale down so the larger dimension fits within MAX_CANVAS_PX
+      pixelRatio = MAX_CANVAS_PX / Math.max(exportW, exportH);
+    }
+
+    const canvasW = Math.max(1, Math.floor(exportW * pixelRatio));
+    const canvasH = Math.max(1, Math.floor(exportH * pixelRatio));
 
     // Wait for fonts
     try { await document.fonts.ready; } catch (_) {}
@@ -55,24 +71,23 @@ export class ExportManager {
 
     const drawToCanvas = (skipImages) => {
       const canvas = document.createElement('canvas');
-      canvas.width = Math.round(exportW * dpr);
-      canvas.height = Math.round(exportH * dpr);
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
 
-      ctx.scale(dpr, dpr);
+      ctx.scale(pixelRatio, pixelRatio);
       ctx.fillStyle = isDark ? '#131313' : '#f8f9ff';
       ctx.fillRect(0, 0, exportW, exportH);
       ctx.translate(padding - minX, padding - minY);
 
-      const sorted = [...this.em.sortedElements];
-      for (const el of sorted) {
+      for (const el of this.em.sortedElements) {
         if (!el.visible) continue;
         if (skipImages && el.type === 'image') continue;
-
         ctx.save();
         try {
-          if (el.rotation !== 0) {
+          if (el.rotation) {
             const cx = el.x + el.width / 2;
             const cy = el.y + el.height / 2;
             ctx.translate(cx, cy);
@@ -81,8 +96,8 @@ export class ExportManager {
           }
           ctx.globalAlpha = el.opacity ?? 1;
           el.render(ctx);
-        } catch (renderErr) {
-          console.warn('[Export] Skipping element', el.id, 'due to render error:', renderErr.message);
+        } catch (e) {
+          console.warn('[Export] Skipped element', el.id, e.message);
         }
         ctx.restore();
       }
@@ -90,44 +105,44 @@ export class ExportManager {
       return canvas;
     };
 
-    // Try with images first, then without if tainted
-    const download = (dataUrl) => {
+    try {
+      let dataUrl;
+      let skippedImages = false;
+
+      try {
+        const canvas = drawToCanvas(false);
+        if (!canvas) throw new Error('Canvas context unavailable');
+        dataUrl = canvas.toDataURL('image/png');
+      } catch (e) {
+        // SecurityError = canvas tainted by cross-origin image
+        console.warn('[Export] Canvas tainted, retrying without images:', e.message);
+        const canvas2 = drawToCanvas(true);
+        if (!canvas2) throw new Error('Canvas context unavailable');
+        dataUrl = canvas2.toDataURL('image/png');
+        skippedImages = true;
+      }
+
+      // 'data:,' means the canvas was still 0×0 — something is very wrong
+      if (!dataUrl || dataUrl === 'data:,' || dataUrl.length < 100) {
+        throw new Error(`Canvas produced empty output (size: ${canvasW}×${canvasH})`);
+      }
+
+      // Trigger download
       const a = document.createElement('a');
       a.href = dataUrl;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-    };
 
-    // First attempt: all elements
-    try {
-      const canvas = drawToCanvas(false);
-      if (!canvas) throw new Error('Could not create canvas context');
-
-      let dataUrl;
-      try {
-        dataUrl = canvas.toDataURL('image/png');
-      } catch (taintErr) {
-        // Canvas is tainted — retry without images
-        console.warn('[Export] Canvas tainted, retrying without images:', taintErr.message);
-        const canvas2 = drawToCanvas(true);
-        if (!canvas2) throw new Error('Could not create fallback canvas');
-        dataUrl = canvas2.toDataURL('image/png');
-        download(dataUrl);
-        Toast.show('Exported PNG (images excluded — cross-origin restriction)', 'warning', 5000);
-        return;
+      if (skippedImages) {
+        Toast.show('Exported PNG (images excluded — cross-origin)', 'warning', 5000);
+      } else {
+        Toast.show('Exported as PNG!', 'success', 2000);
       }
-
-      if (!dataUrl || dataUrl === 'data:,') {
-        throw new Error('Empty canvas data URL');
-      }
-
-      download(dataUrl);
-      Toast.show('Exported as PNG!', 'success', 2000);
     } catch (err) {
       console.error('[Export] PNG export failed:', err);
-      Toast.show(`PNG export failed: ${err.message}`, 'error', 5000);
+      Toast.show(`PNG export failed: ${err.message}`, 'error', 6000);
     }
   }
 
@@ -137,19 +152,23 @@ export class ExportManager {
   async exportAsJSON(filename = 'board.json') {
     const { Toast } = await import('../ui/Toast.js');
 
+    if (!this.em || !this.em.elements) {
+      Toast.show('Export failed: board not fully loaded.', 'error', 4000);
+      return;
+    }
+
     const elements = Array.from(this.em.elements.values()).map(el => {
       try { return el.toJSON(); } catch (_) { return null; }
     }).filter(Boolean);
 
     if (elements.length === 0) {
-      Toast.show('Nothing to export! Draw something first.', 'warning', 3000);
+      Toast.show('Nothing to export!', 'warning', 3000);
       return;
     }
 
     try {
       const data = { version: '1.0', exportedAt: new Date().toISOString(), elements };
-      const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
