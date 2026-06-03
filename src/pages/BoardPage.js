@@ -961,7 +961,10 @@ export class BoardPage {
     panel.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:6px;letter-spacing:0.5px;">UI COMPONENTS</div>`;
 
     Object.entries(categories).forEach(([cat, items]) => {
-      panel.innerHTML += `<div style="font-size:10px;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:0.5px;margin-top:6px;margin-bottom:2px;">${cat}</div>`;
+      const catHeader = document.createElement('div');
+      catHeader.style.cssText = 'font-size:10px;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:0.5px;margin-top:6px;margin-bottom:2px;';
+      catHeader.textContent = cat;
+      panel.appendChild(catHeader);
       items.forEach(component => {
         const def = UI_COMPONENTS[component];
         const btn = document.createElement('button');
