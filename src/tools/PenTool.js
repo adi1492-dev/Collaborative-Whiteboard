@@ -78,15 +78,17 @@ export class PenTool extends Tool {
           }
         }
 
-        // Push to history
+        // Push to history — push() does NOT call apply(), so no double-broadcast
         const el = this.currentElement;
         if (this.cm.historyManager) {
           this.cm.historyManager.push({
             description: 'Draw stroke',
+            // apply() = redo: the element was removed by undo; re-add it
             apply: () => {
               this.em.setElement(el);
               this.cm.syncManager?.broadcastCreate(el);
             },
+            // revert() = undo: remove the stroke
             revert: () => {
               this.em.removeElement(el.id);
               this.cm.syncManager?.broadcastDelete(el.id);

@@ -9,6 +9,7 @@ import { FreehandElement } from '../elements/FreehandElement.js';
 import { ShapeElement } from '../elements/ShapeElement.js';
 import { StickyNote } from '../elements/StickyNote.js';
 import { TextElement } from '../elements/TextElement.js';
+import { ImageElement } from '../elements/ImageElement.js';
 import { Element } from '../elements/Element.js';
 import { WebRTCManager } from './WebRTCManager.js';
 
@@ -313,6 +314,10 @@ export class SyncManager {
         localEl.text = remoteEl.text;
       } else if (remoteEl.type === 'freehand') {
         localEl.points = remoteEl.points;
+      } else if (remoteEl.type === 'image' && remoteEl.src !== localEl.src) {
+        // Re-load image if src changed (e.g. replaced image)
+        localEl.src = remoteEl.src;
+        localEl._loadImage && localEl._loadImage();
       }
 
       localEl.updatedAt = remoteEl.updatedAt;
@@ -326,8 +331,9 @@ export class SyncManager {
   }
 
   _onRemoteDelete(msg) {
-    const elementId = msg.payload.elementId;
-    this._tickClock(msg.payload.updatedAt);
+    const elementId = msg.payload?.elementId;
+    if (!elementId) return; // Guard: malformed message
+    this._tickClock(msg.payload.updatedAt || 0);
     this.em.removeElement(elementId);
 
     // BUG-003 fix: Only forward to WS server if this wasn't one we just sent
@@ -340,6 +346,7 @@ export class SyncManager {
   }
 
   _hydrateElement(data) {
+    if (!data || !data.type) return null;
     switch (data.type) {
       case 'freehand':
         return new FreehandElement(data);
@@ -349,8 +356,11 @@ export class SyncManager {
         return new StickyNote(data);
       case 'text':
         return new TextElement(data);
+      case 'image':
+        return new ImageElement(data);
       default:
-        return new Element(data);
+        console.warn('[SyncManager] Unknown element type:', data.type);
+        return null; // Reject unknown types rather than creating a broken base Element
     }
   }
 

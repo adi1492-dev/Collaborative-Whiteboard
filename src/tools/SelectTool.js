@@ -206,7 +206,7 @@ export class SelectTool extends Tool {
       if (this.cm.syncManager) {
         this.cm.syncManager.broadcastUpdate(el);
       }
-      // BUG-014 fix: capture primitive values only, never reference the live element
+      // Push resize to history — push() doesn't call apply(), just records it
       if (this.cm.historyManager) {
         const prev = {
           x: this.resizeStartState.x,
@@ -217,7 +217,9 @@ export class SelectTool extends Tool {
         const next = { x: el.x, y: el.y, width: el.width, height: el.height };
         this.cm.historyManager.push({
           description: 'Resize element',
+          // apply = redo: re-apply the resize after an undo
           apply: () => { Object.assign(el, next); el.updatedAt = Date.now(); this.cm.requestStaticRender(); this.cm.syncManager?.broadcastUpdate(el); },
+          // revert = undo: restore pre-resize dimensions
           revert: () => { el.x = prev.x; el.y = prev.y; el.width = prev.width; el.height = prev.height; el.updatedAt = Date.now(); this.cm.requestStaticRender(); this.cm.syncManager?.broadcastUpdate(el); }
         });
       }
@@ -228,7 +230,7 @@ export class SelectTool extends Tool {
           if (el) this.cm.syncManager.broadcastUpdate(el);
         }
       }
-      // History
+      // Push move to history — push() doesn't call apply(), just records it
       if (this.cm.historyManager && this.dragStartPositions.size > 0) {
         const moved = new Map([...this.dragStartPositions]);
         const after = new Map();
@@ -238,7 +240,9 @@ export class SelectTool extends Tool {
         }
         this.cm.historyManager.push({
           description: 'Move element(s)',
+          // apply = redo: re-move after undo
           apply: () => { for (const [id, pos] of after) { const el = this.em.elements.get(id); if (el) { el.x = pos.x; el.y = pos.y; el.updatedAt = Date.now(); this.cm.syncManager?.broadcastUpdate(el); } } this.cm.requestStaticRender(); },
+          // revert = undo: restore previous positions
           revert: () => { for (const [id, pos] of moved) { const el = this.em.elements.get(id); if (el) { el.x = pos.x; el.y = pos.y; el.updatedAt = Date.now(); this.cm.syncManager?.broadcastUpdate(el); } } this.cm.requestStaticRender(); }
         });
       }

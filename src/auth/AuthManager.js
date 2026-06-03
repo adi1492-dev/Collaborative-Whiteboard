@@ -5,8 +5,11 @@
 export class AuthManager {
   constructor() {
     this._accessToken = null;
-    this._refreshToken = localStorage.getItem('canvasflow-refresh-token');
-    this._user = JSON.parse(localStorage.getItem('canvasflow-user') || 'null');
+    // Guard against localStorage storing literal "null" string
+    const storedRefresh = localStorage.getItem('canvasflow-refresh-token');
+    this._refreshToken = (storedRefresh && storedRefresh !== 'null') ? storedRefresh : null;
+    const storedUser = localStorage.getItem('canvasflow-user');
+    this._user = (storedUser && storedUser !== 'null') ? JSON.parse(storedUser) : null;
     this._refreshTimer = null;
   }
 
@@ -113,6 +116,12 @@ export class AuthManager {
    * Logout — clear all auth state.
    */
   async logout() {
+    // Clear timer first to prevent any in-flight refresh from reviving the session
+    if (this._refreshTimer) {
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = null;
+    }
+
     try {
       if (this._refreshToken) {
         await fetch('/api/auth/logout', {
@@ -125,7 +134,7 @@ export class AuthManager {
         });
       }
     } catch {
-      // Ignore errors during logout
+      // Ignore errors during logout — user is being logged out regardless
     }
 
     this._accessToken = null;
@@ -133,10 +142,6 @@ export class AuthManager {
     this._user = null;
     localStorage.removeItem('canvasflow-refresh-token');
     localStorage.removeItem('canvasflow-user');
-
-    if (this._refreshTimer) {
-      clearTimeout(this._refreshTimer);
-    }
   }
 
   /**
