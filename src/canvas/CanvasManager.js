@@ -55,13 +55,15 @@ export class CanvasManager {
   }
 
   _bindEvents() {
-    window.addEventListener('resize', () => this.resize());
-    
-    const observer = new MutationObserver(() => {
+    // Store the bound handler so we can remove it on destroy
+    this._boundResize = () => this.resize();
+    window.addEventListener('resize', this._boundResize);
+
+    this._themeObserver = new MutationObserver(() => {
       this.isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
       this.requestStaticRender();
     });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    this._themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
 
   resize() {
@@ -105,7 +107,26 @@ export class CanvasManager {
   }
 
   stopRenderLoop() {
-    if (this.renderLoopId) cancelAnimationFrame(this.renderLoopId);
+    if (this.renderLoopId) {
+      cancelAnimationFrame(this.renderLoopId);
+      this.renderLoopId = null;
+    }
+    // Remove the window resize listener (was an anonymous fn before — now stored)
+    if (this._boundResize) {
+      window.removeEventListener('resize', this._boundResize);
+      this._boundResize = null;
+    }
+    // Disconnect the theme mutation observer
+    if (this._themeObserver) {
+      this._themeObserver.disconnect();
+      this._themeObserver = null;
+    }
+    // Null out all cross-references so nothing can trigger cursor/sync updates
+    this.syncManager = null;
+    this.inputHandler = null;
+    this.elementManager = null;
+    this.historyManager = null;
+    this.textEditor = null;
   }
 
   render() {

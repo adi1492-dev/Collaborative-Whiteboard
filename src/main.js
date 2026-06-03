@@ -77,9 +77,26 @@ class App {
             return;
           }
           const boardId = path.split('/board/')[1];
+          const expectedPath = path; // Capture at time of route() call
+
           // BoardPage will be loaded dynamically
+          // RACE CONDITION FIX: After the async import resolves, verify the
+          // user is still on this board route. If they've navigated away,
+          // destroy() was already called on any page created in the meantime.
           import('./pages/BoardPage.js').then(({ BoardPage }) => {
+            const currentPath = (window.location.hash.slice(1) || '/').split('?')[0];
+            if (currentPath !== expectedPath) {
+              // User navigated away before the import resolved — do not mount.
+              console.log('[Router] Ignoring stale BoardPage mount for', expectedPath);
+              return;
+            }
+            // Destroy any page that may have been set since this import started
+            if (this.currentPage && typeof this.currentPage.destroy === 'function') {
+              try { this.currentPage.destroy(); } catch (_) {}
+            }
             this.currentPage = new BoardPage(this.root, this, boardId);
+          }).catch(err => {
+            console.error('[Router] Failed to load BoardPage:', err);
           });
         } else {
           this.currentPage = new LandingPage(this.root, this);

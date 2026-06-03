@@ -19,6 +19,9 @@ export class InputHandler {
     this.historyManager = null;
     this.contextMenu = null;
 
+    // Lifecycle guard: prevent any event callbacks from firing after destroy()
+    this._destroyed = false;
+
     this._bindEvents();
   }
 
@@ -57,6 +60,7 @@ export class InputHandler {
   }
 
   destroy() {
+    this._destroyed = true; // Stop all callbacks immediately
     if (!this.cm || !this.cm.container) return;
     const container = this.cm.container;
     container.removeEventListener('pointerdown', this._boundPointerDown);
@@ -98,6 +102,8 @@ export class InputHandler {
   }
 
   _onPointerMove(e) {
+    if (this._destroyed) return; // Safety net: don't process events after destroy
+
     const pt = this.cm.getPointerEventCoords(e);
 
     if (this.cm.syncManager) {
