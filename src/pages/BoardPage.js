@@ -15,6 +15,7 @@ import { CommandPalette } from '../ui/CommandPalette.js';
 import { TemplateEngine } from '../plugins/templates/TemplateEngine.js';
 import { TemplateModal } from '../ui/TemplateModal.js';
 import { CommentPanel } from '../ui/CommentPanel.js';
+import { ShareModal } from '../ui/ShareModal.js';
 import { AIManager } from '../ai/AIManager.js';
 import { HistoryManager } from '../history/HistoryManager.js';
 import { ExportManager } from '../export/ExportManager.js';
@@ -273,6 +274,13 @@ export class BoardPage {
 
     // 11.9 Background Settings button
     this._initBackgroundSettings();
+
+    // 11.10 Share Modal
+    this.shareModal = new ShareModal(this.app, this.boardId, this.boardData);
+    this._initShareButton();
+
+    // 11.11 Comment Tool button — places a comment bubble on canvas
+    this._initCommentTool();
 
     // Dynamic property panel
     const originalSetActive = this.ih.setActiveTool.bind(this.ih);
@@ -1007,6 +1015,79 @@ export class BoardPage {
         }
       };
       setTimeout(() => document.addEventListener('pointerdown', dismiss), 50);
+    });
+  }
+
+  _initShareButton() {
+    const headerRight = this.root.querySelector('.header-right');
+    if (!headerRight) return;
+
+    const shareBtn = document.createElement('button');
+    shareBtn.className = 'btn btn-outline';
+    shareBtn.id = 'share-btn';
+    shareBtn.style.cssText = 'padding:6px 12px;height:auto;';
+    shareBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size:16px;margin-right:4px;">share</span>Share`;
+
+    // Insert before export button
+    const exportBtn = headerRight.querySelector('#export-btn');
+    if (exportBtn) {
+      headerRight.insertBefore(shareBtn, exportBtn);
+    } else {
+      headerRight.appendChild(shareBtn);
+    }
+
+    shareBtn.addEventListener('click', () => {
+      this.shareModal.show(this.boardData);
+    });
+  }
+
+  _initCommentTool() {
+    // Add a comment button to the toolbar
+    const toolbar = this.root.querySelector('.toolbar');
+    if (!toolbar) return;
+
+    const divider = document.createElement('div');
+    divider.className = 'toolbar-divider';
+    toolbar.appendChild(divider);
+
+    const commentBtn = document.createElement('button');
+    commentBtn.className = 'toolbar-btn';
+    commentBtn.id = 'comment-tool-btn';
+    commentBtn.title = 'Add Comment';
+    commentBtn.innerHTML = `
+      <span class="material-symbols-outlined">comment</span>
+      <span class="toolbar-btn-label">Comment</span>
+    `;
+    toolbar.appendChild(commentBtn);
+
+    commentBtn.addEventListener('click', () => {
+      if (!this.cm || !this.sync || !this.em) return;
+
+      const scale = this.cm.transform.scale;
+      const cx = (this.cm.width / 2 - this.cm.transform.panX) / scale;
+      const cy = (this.cm.height / 2 - this.cm.transform.panY) / scale;
+
+      const user = this.app.auth.getUser();
+      const el = new CommentElement({
+        id: generateId(),
+        x: cx,
+        y: cy,
+        text: '',
+        authorName: user?.displayName || user?.name || 'You',
+        authorId: user?.id || user?.$id || 'anon',
+        parentId: null,
+        zIndex: Date.now(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      this.em.setElement(el);
+      this.sync.broadcastCreate(el);
+      this.cm.requestStaticRender();
+
+      // Immediately open the comment panel so user can type
+      this.commentPanel?.open(el);
+      Toast.show('Comment placed! Add your text in the panel.', 'info', 2500);
     });
   }
 

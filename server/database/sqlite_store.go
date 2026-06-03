@@ -35,6 +35,8 @@ func InitSQLiteStore() error {
 			room_key TEXT,
 			room_key_expires_at DATETIME,
 			collaborators TEXT NOT NULL DEFAULT '[]',
+			public_view_enabled INTEGER NOT NULL DEFAULT 0,
+			public_view_token TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
@@ -59,6 +61,16 @@ func InitSQLiteStore() error {
 		if _, err := sqliteDB.Exec(q); err != nil {
 			return err
 		}
+	}
+
+	// Migrate: add columns to existing databases that don't have them yet
+	migrations := []string{
+		`ALTER TABLE boards ADD COLUMN public_view_enabled INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE boards ADD COLUMN public_view_token TEXT`,
+	}
+	for _, m := range migrations {
+		// Ignore errors — column already exists is the most common failure
+		sqliteDB.Exec(m)
 	}
 
 	log.Println("✅ SQLite local store tables ready")
@@ -153,6 +165,8 @@ type SQLiteBoard struct {
 	OwnerID           string
 	ShareLink         string
 	SharePermission   string
+	PublicViewEnabled bool
+	PublicViewToken   string
 	RoomKey           string
 	RoomKeyExpiresAt  time.Time
 	Collaborators     []map[string]interface{}
@@ -170,12 +184,14 @@ func SQLiteCreateBoard(board *SQLiteBoard) error {
 }
 
 func SQLiteGetBoard(boardID string) (*SQLiteBoard, error) {
-	row := sqliteDB.QueryRow(`SELECT id, board_id, title, background, owner_id, share_link, share_permission, room_key, room_key_expires_at, collaborators, created_at, updated_at FROM boards WHERE board_id = ?`, boardID)
+	row := sqliteDB.QueryRow(`SELECT id, board_id, title, background, owner_id, share_link, share_permission, room_key, room_key_expires_at, collaborators, public_view_enabled, public_view_token, created_at, updated_at FROM boards WHERE board_id = ?`, boardID)
 	b := &SQLiteBoard{}
 	var collabJSON string
 	var roomKey sql.NullString
 	var roomKeyExpiresAt sql.NullTime
-	err := row.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &roomKey, &roomKeyExpiresAt, &collabJSON, &b.CreatedAt, &b.UpdatedAt)
+	var publicViewToken sql.NullString
+	var publicViewEnabled int
+	err := row.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &roomKey, &roomKeyExpiresAt, &collabJSON, &publicViewEnabled, &publicViewToken, &b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -185,13 +201,17 @@ func SQLiteGetBoard(boardID string) (*SQLiteBoard, error) {
 	if roomKeyExpiresAt.Valid {
 		b.RoomKeyExpiresAt = roomKeyExpiresAt.Time
 	}
+	if publicViewToken.Valid {
+		b.PublicViewToken = publicViewToken.String
+	}
+	b.PublicViewEnabled = publicViewEnabled == 1
 	json.Unmarshal([]byte(collabJSON), &b.Collaborators)
 	return b, nil
 }
 
 func SQLiteListBoards(userID string) ([]*SQLiteBoard, error) {
 	rows, err := sqliteDB.Query(`
-		SELECT id, board_id, title, background, owner_id, share_link, share_permission, room_key, room_key_expires_at, collaborators, created_at, updated_at 
+		SELECT id, board_id, title, background, owner_id, share_link, share_permission, room_key, room_key_expires_at, collaborators, public_view_enabled, public_view_token, created_at, updated_at 
 		FROM boards 
 		WHERE owner_id = ? OR collaborators LIKE '%' || '"userId":"' || ? || '"' || '%'
 		ORDER BY updated_at DESC
@@ -207,7 +227,9 @@ func SQLiteListBoards(userID string) ([]*SQLiteBoard, error) {
 		var collabJSON string
 		var roomKey sql.NullString
 		var roomKeyExpiresAt sql.NullTime
-		if err := rows.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &roomKey, &roomKeyExpiresAt, &collabJSON, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		var publicViewToken sql.NullString
+		var publicViewEnabled int
+		if err := rows.Scan(&b.ID, &b.BoardID, &b.Title, &b.Background, &b.OwnerID, &b.ShareLink, &b.SharePermission, &roomKey, &roomKeyExpiresAt, &collabJSON, &publicViewEnabled, &publicViewToken, &b.CreatedAt, &b.UpdatedAt); err != nil {
 			continue
 		}
 		if roomKey.Valid {
@@ -216,10 +238,26 @@ func SQLiteListBoards(userID string) ([]*SQLiteBoard, error) {
 		if roomKeyExpiresAt.Valid {
 			b.RoomKeyExpiresAt = roomKeyExpiresAt.Time
 		}
+		if publicViewToken.Valid {
+			b.PublicViewToken = publicViewToken.String
+		}
+		b.PublicViewEnabled = publicViewEnabled == 1
 		json.Unmarshal([]byte(collabJSON), &b.Collaborators)
 		boards = append(boards, b)
 	}
 	return boards, nil
+}
+
+func SQLiteSetPublicViewToken(boardID, token string, enabled bool) error {
+	enableInt := 0
+	if enabled {
+		enableInt = 1
+	}
+	_, err := sqliteDB.Exec(
+		`UPDATE boards SET public_view_token = ?, public_view_enabled = ?, updated_at = ? WHERE board_id = ?`,
+		token, enableInt, time.Now(), boardID,
+	)
+	return err
 }
 
 func SQLiteUpdateBoardTitle(boardID, ownerID, title string) error {

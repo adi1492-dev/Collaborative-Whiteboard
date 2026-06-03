@@ -21,18 +21,20 @@ type CreateBoardRequest struct {
 // helper to build a JSON-friendly board map from SQLiteBoard
 func sqliteBoardToMap(b *database.SQLiteBoard) gin.H {
 	return gin.H{
-		"id":               b.ID,
-		"boardId":          b.BoardID,
-		"title":            b.Title,
-		"background":       b.Background,
-		"ownerId":          b.OwnerID,
-		"shareLink":        b.ShareLink,
-		"sharePermission":  b.SharePermission,
-		"roomKey":          b.RoomKey,
-		"roomKeyExpiresAt": b.RoomKeyExpiresAt,
-		"collaborators":    b.Collaborators,
-		"createdAt":        b.CreatedAt,
-		"updatedAt":        b.UpdatedAt,
+		"id":                b.ID,
+		"boardId":           b.BoardID,
+		"title":             b.Title,
+		"background":        b.Background,
+		"ownerId":           b.OwnerID,
+		"shareLink":         b.ShareLink,
+		"sharePermission":   b.SharePermission,
+		"publicViewEnabled": b.PublicViewEnabled,
+		"publicViewToken":   b.PublicViewToken,
+		"roomKey":           b.RoomKey,
+		"roomKeyExpiresAt":  b.RoomKeyExpiresAt,
+		"collaborators":     b.Collaborators,
+		"createdAt":         b.CreatedAt,
+		"updatedAt":         b.UpdatedAt,
 	}
 }
 
@@ -160,16 +162,145 @@ func DeleteBoard(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Board deleted"})
 }
 
-// UpdateShareLink handles POST /api/boards/:id/share
-func UpdateShareLink(c *gin.Context) {
-	var req struct {
-		Permission string `json:"permission"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		req.Permission = "view"
+// EnablePublicView handles POST /api/boards/:id/share/public
+// Generates a long-lived view-only JWT and stores it on the board.
+func EnablePublicView(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+
+	board, err := database.SQLiteGetBoard(boardID)
+	if err != nil || board.OwnerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only the board owner can enable public view"})
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Share updated (Local mock)"})
+	viewToken, err := auth.GenerateViewOnlyToken(boardID, board.Title)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate view token"})
+		return
+	}
+
+	if err := database.SQLiteSetPublicViewToken(boardID, viewToken, true); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"publicViewToken": viewToken, "publicViewEnabled": true})
+}
+
+// DisablePublicView handles DELETE /api/boards/:id/share/public
+func DisablePublicView(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+
+	board, err := database.SQLiteGetBoard(boardID)
+	if err != nil || board.OwnerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only the board owner can disable public view"})
+		return
+	}
+
+	if err := database.SQLiteSetPublicViewToken(boardID, "", false); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"publicViewEnabled": false})
+}
+
+// InviteCollaborator handles POST /api/boards/:id/invite
+// Adds a user by email as an editor collaborator.
+func InviteCollaborator(c *gin.Context) {
+	boardID := c.Param("id")
+	userID := auth.GetUserID(c)
+
+	var req struct {
+		Email string `json:"email" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Email is required"})
+		return
+	}
+
+	// Ensure requester owns the board
+	board, err := database.SQLiteGetBoard(boardID)
+	if err != nil || board.OwnerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only the board owner can invite collaborators"})
+		return
+	}
+
+	// Find user by email
+	targetUser, err := database.SQLiteFindUserByEmail(req.Email)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No account found with that email address"})
+		return
+	}
+
+	if targetUser.ID == userID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "You cannot invite yourself"})
+		return
+	}
+
+	// Check if already a collaborator
+	for _, col := range board.Collaborators {
+		if cid, ok := col["userId"].(string); ok && cid == targetUser.ID {
+			c.JSON(http.StatusConflict, gin.H{"error": "User is already a collaborator"})
+			return
+		}
+	}
+
+	if err := database.SQLiteAddCollaborator(boardID, targetUser.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add collaborator"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Collaborator added successfully",
+		"userId":      targetUser.ID,
+		"displayName": targetUser.DisplayName,
+		"email":       targetUser.Email,
+	})
+}
+
+// ViewBoardPublic handles GET /api/boards/:id/view?token=... (no auth required)
+// Returns board elements if the token is a valid view-only JWT for this board.
+func ViewBoardPublic(c *gin.Context) {
+	boardID := c.Param("id")
+	tokenStr := c.Query("token")
+
+	if tokenStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "View token required"})
+		return
+	}
+
+	claims, err := auth.ValidateAccessToken(tokenStr)
+	if err != nil || claims.Role != "viewer" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired view token"})
+		return
+	}
+
+	board, err := database.SQLiteGetBoard(boardID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Board not found"})
+		return
+	}
+
+	if !board.PublicViewEnabled {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Public view is not enabled for this board"})
+		return
+	}
+
+	elements, _ := database.SQLiteGetElements(boardID)
+	if elements == nil {
+		elements = []map[string]interface{}{}
+	}
+
+	// Return board without sensitive data (no room key)
+	board.RoomKey = ""
+	c.JSON(http.StatusOK, gin.H{
+		"board":    sqliteBoardToMap(board),
+		"elements": elements,
+		"role":     "viewer",
+	})
 }
 
 // SyncElementsRequest is the expected body for bulk syncing elements.

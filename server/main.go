@@ -91,12 +91,17 @@ func main() {
 		boardGroup.GET("/:id", handlers.GetBoard)
 		boardGroup.PUT("/:id", handlers.UpdateBoard)
 		boardGroup.DELETE("/:id", handlers.DeleteBoard)
-		boardGroup.POST("/:id/share", handlers.UpdateShareLink)
+		boardGroup.POST("/:id/share", handlers.EnablePublicView)
+		boardGroup.DELETE("/:id/share", handlers.DisablePublicView)
+		boardGroup.POST("/:id/invite", handlers.InviteCollaborator)
 		boardGroup.POST("/:id/key/refresh", handlers.RefreshRoomKey)
 		boardGroup.DELETE("/:id/collaborators/:userId", handlers.RemoveCollaborator)
 		boardGroup.POST("/:id/sync", handlers.SyncBoardElements)
 		boardGroup.POST("/:id/ai/summarize", handlers.SummarizeBoard)
 	}
+
+	// Public view route — no JWT middleware, accepts view token as query param
+	router.GET("/api/boards/:id/view", handlers.ViewBoardPublic)
 
 	// Upload route (JWT protected)
 	router.POST("/api/upload", auth.JWTMiddleware(), handlers.UploadImage)

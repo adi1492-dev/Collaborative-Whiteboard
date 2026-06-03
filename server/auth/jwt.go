@@ -15,6 +15,7 @@ import (
 type Claims struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
+	Role  string `json:"role,omitempty"` // "editor" | "viewer" | "" (default = editor)
 	jwt.RegisteredClaims
 }
 
@@ -23,6 +24,7 @@ func GenerateAccessToken(userID, email, displayName string) (string, error) {
 	claims := Claims{
 		Email: email,
 		Name:  displayName,
+		Role:  "editor",
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -30,6 +32,23 @@ func GenerateAccessToken(userID, email, displayName string) (string, error) {
 		},
 	}
 
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(config.AppConfig.JWTSecret))
+}
+
+// GenerateViewOnlyToken creates a long-lived JWT for public view-only access.
+// The token encodes role='viewer' so the server can enforce read-only rules.
+func GenerateViewOnlyToken(boardID, boardTitle string) (string, error) {
+	claims := Claims{
+		Email: "",
+		Name:  "Guest Viewer",
+		Role:  "viewer",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "view:" + boardID,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * 24 * time.Hour)), // 30 days
+		},
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(config.AppConfig.JWTSecret))
 }
