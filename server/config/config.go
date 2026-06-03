@@ -20,6 +20,8 @@ type Config struct {
 	WebRTCEnabled  bool
 	TursoURL       string
 	TursoToken     string
+	FrontendURL    string // Vercel frontend URL for CORS (e.g. https://your-app.vercel.app)
+	CloudinaryURL  string // Optional: Cloudinary URL for cloud image storage
 }
 
 // Global application config (initialized once at startup).
@@ -68,6 +70,8 @@ func Load() {
 		WebRTCEnabled: webrtcEnabled,
 		TursoURL:      getEnv("TURSO_DATABASE_URL", ""),
 		TursoToken:    getEnv("TURSO_AUTH_TOKEN", ""),
+		FrontendURL:   getEnv("FRONTEND_URL", ""),
+		CloudinaryURL: getEnv("CLOUDINARY_URL", ""),
 	}
 
 	log.Printf("✅ Config loaded: port=%s, turso=%v, gemini=%s, webrtc=%v",

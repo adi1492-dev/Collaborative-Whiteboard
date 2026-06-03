@@ -36,9 +36,18 @@ func main() {
 	// Setup Gin router
 	router := gin.Default()
 
-	// CORS middleware
+	// CORS middleware — allow configured origins
+	// FRONTEND_URL env var must be set on Railway to your Vercel domain
+	allowedOrigins := []string{
+		"http://localhost:5173",
+		"http://localhost:3001",
+	}
+	if frontendURL := os.Getenv("FRONTEND_URL"); frontendURL != "" {
+		allowedOrigins = append(allowedOrigins, frontendURL)
+	}
+
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:3001"},
+		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},

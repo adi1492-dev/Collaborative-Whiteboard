@@ -29,9 +29,13 @@ export class SyncManager {
     this.dirtyElements = new Map();
 
     // Setup WebSocket
+    // In production (Vercel + Railway), VITE_API_URL points to the Railway backend.
+    // In development, it falls back to window.location.host (proxied by Vite).
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.host;
-    const url = `${wsProtocol}//${wsHost}/ws/board/${boardId}`;
+    const apiHost = import.meta.env.VITE_API_URL
+      ? import.meta.env.VITE_API_URL.replace(/^https?:\/\//, '') // strip protocol if present
+      : window.location.host;
+    const url = `${wsProtocol}//${apiHost}/ws/board/${boardId}`;
 
     this.ws = new WebSocketClient(url, () => this.app.auth.getAccessToken());
 

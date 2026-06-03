@@ -1,7 +1,16 @@
 /**
  * AuthManager — Handles JWT authentication, token refresh, and API calls.
  * Access token stored in memory (XSS safe), refresh token in localStorage.
+ *
+ * Production note: Set VITE_API_URL env var on Vercel to point to the Railway
+ * backend (e.g. https://your-app.up.railway.app). In dev, Vite proxy handles it.
  */
+
+// Resolve the API base URL once at module load time.
+// In dev: '' (empty) — Vite proxy forwards /api/* to localhost:3001
+// In prod: 'https://your-app.up.railway.app' — direct cross-domain call
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
 export class AuthManager {
   constructor() {
     this._accessToken = null;
@@ -46,7 +55,7 @@ export class AuthManager {
    * Register a new user.
    */
   async register(email, password, displayName) {
-    const res = await fetch('/api/auth/register', {
+    const res = await fetch(`${API_BASE}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, displayName }),
@@ -66,7 +75,7 @@ export class AuthManager {
    * Login with email and password.
    */
   async login(email, password) {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -92,7 +101,7 @@ export class AuthManager {
     }
 
     try {
-      const res = await fetch('/api/auth/refresh', {
+      const res = await fetch(`${API_BASE}/api/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: this._refreshToken }),
@@ -124,7 +133,7 @@ export class AuthManager {
 
     try {
       if (this._refreshToken) {
-        await fetch('/api/auth/logout', {
+        await fetch(`${API_BASE}/api/auth/logout`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -148,15 +157,17 @@ export class AuthManager {
    * Make an authenticated API call with automatic token refresh.
    */
   async apiFetch(url, options = {}) {
+    // Prepend API_BASE so calls work cross-domain in production
+    const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
     const headers = { ...this.getAuthHeaders(), ...options.headers };
-    let res = await fetch(url, { ...options, headers });
+    let res = await fetch(fullUrl, { ...options, headers });
 
-    // If 401, try refreshing token
+    // If 401, try refreshing token once
     if (res.status === 401 && this._refreshToken) {
       const refreshed = await this.refreshAccessToken();
       if (refreshed) {
         const retryHeaders = { ...this.getAuthHeaders(), ...options.headers };
-        res = await fetch(url, { ...options, headers: retryHeaders });
+        res = await fetch(fullUrl, { ...options, headers: retryHeaders });
       }
     }
 
