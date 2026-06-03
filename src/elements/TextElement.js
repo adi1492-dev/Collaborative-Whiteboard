@@ -9,9 +9,14 @@ export class TextElement extends Element {
     this.type = 'text';
     this.text = options.text || '';
     
-    // Inherit text color from theme
+    // Inherit text color from theme and canvas background
     const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
-    this.style.fillColor = options.style?.fillColor || (isDarkMode ? '#e5e2e1' : '#0b1c30');
+    const canvasBg = document.documentElement.getAttribute('data-canvas-bg') || 'grid';
+    let defaultColor = isDarkMode ? '#e5e2e1' : '#0b1c30';
+    if (canvasBg === 'solid-dark') defaultColor = '#e5e2e1';
+    if (canvasBg === 'solid-light') defaultColor = '#0b1c30';
+    
+    this.style.fillColor = options.style?.fillColor || defaultColor;
     this.style.fontSize = options.style?.fontSize || 24;
     
     if (!options.width) this.width = 200;

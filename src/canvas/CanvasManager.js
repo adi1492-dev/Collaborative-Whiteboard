@@ -91,6 +91,29 @@ export class CanvasManager {
 
   setBackground(type) {
     this.backgroundType = type;
+    document.documentElement.setAttribute('data-canvas-bg', type);
+    
+    // Auto-correct text element colors for contrast
+    if (this.elementManager) {
+      let changed = false;
+      for (const el of this.elementManager.elements.values()) {
+        if (el.type === 'text') {
+          // If canvas is dark and text is dark
+          if ((type === 'solid-dark' || this.isDarkMode) && el.style.fillColor === '#0b1c30') {
+            el.style.fillColor = '#e5e2e1';
+            changed = true;
+            if (this.syncManager) this.syncManager.broadcastUpdate(el);
+          }
+          // If canvas is light and text is light
+          else if ((type === 'solid-light' || type === 'blank' || (!this.isDarkMode && type !== 'solid-dark')) && el.style.fillColor === '#e5e2e1') {
+            el.style.fillColor = '#0b1c30';
+            changed = true;
+            if (this.syncManager) this.syncManager.broadcastUpdate(el);
+          }
+        }
+      }
+    }
+    
     this.requestStaticRender();
   }
 

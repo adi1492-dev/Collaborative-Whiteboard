@@ -65,8 +65,18 @@ export class TextEditor {
     if (!this.currentElement) return;
 
     if (commit) {
-      const newText = this._textarea.value;
-      if (newText !== this.currentElement.text) {
+      const newText = this._textarea.value.trim();
+      
+      if (!newText) {
+        // Text is empty, delete the element to prevent invisible clutter
+        const elId = this.currentElement.id;
+        if (this.cm && this.cm.elementManager) {
+          this.cm.elementManager.removeElement(elId);
+        }
+        if (this.sync) {
+          this.sync.broadcastDelete([elId]);
+        }
+      } else if (newText !== this.currentElement.text) {
         this.currentElement.text = newText;
         this.currentElement.updatedAt = Date.now();
         this.cm.requestStaticRender();
