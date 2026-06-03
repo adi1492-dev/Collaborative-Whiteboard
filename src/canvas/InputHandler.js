@@ -106,7 +106,8 @@ export class InputHandler {
 
     const pt = this.cm.getPointerEventCoords(e);
 
-    if (this.cm.syncManager) {
+    // Only send cursor updates when on the canvas (not during dashboard navigation)
+    if (this.cm.syncManager && document.contains(this.cm.container)) {
       this.cm.syncManager.presenceSync.updateCursor(pt.x, pt.y);
     }
 
@@ -125,7 +126,11 @@ export class InputHandler {
   }
 
   _onPointerUp(e) {
-    this.cm.container.releasePointerCapture(e.pointerId);
+    try {
+      this.cm.container.releasePointerCapture(e.pointerId);
+    } catch (_) {
+      // pointerId may already be released if the OS cancelled the gesture
+    }
 
     if (this.isPanning) {
       this.isPanning = false;
@@ -205,16 +210,20 @@ export class InputHandler {
           if (this.contextMenu) {
             const clip = this.contextMenu.getClipboard();
             if (clip && this.cm.syncManager) {
-              const clone = { ...clip, id: Date.now().toString(36), x: clip.x + 20, y: clip.y + 20 };
+              // Use generateId for collision-safe IDs even under rapid paste
+              const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+              const clone = { ...clip, id: newId, x: clip.x + 20, y: clip.y + 20 };
+              // Deep-clone point arrays (freehand)
+              if (Array.isArray(clip.points)) clone.points = clip.points.map(p => ({ ...p }));
               const hydrated = this.cm.syncManager._hydrateElement(clone);
               if (hydrated) {
                 this.em.setElement(hydrated);
                 this.cm.syncManager.broadcastCreate(hydrated);
-                // BUG-011 fix: add paste to undo history
                 if (this.historyManager) {
                   const el = hydrated;
                   this.historyManager.push({
                     description: 'Paste element',
+                    // apply = redo: re-add the element (it was removed by a prior undo)
                     apply: () => { this.em.setElement(el); this.cm.syncManager?.broadcastCreate(el); },
                     revert: () => { this.em.removeElement(el.id); this.cm.syncManager?.broadcastDelete(el.id); }
                   });
@@ -229,18 +238,19 @@ export class InputHandler {
             const id = [...this.em.selectedIds][0];
             const el = this.em.elements.get(id);
             if (el) {
-              const clone = { ...el.toJSON(), id: Date.now().toString(36), x: el.x + 20, y: el.y + 20 };
+              const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+              const clone = { ...el.toJSON(), id: newId, x: el.x + 20, y: el.y + 20 };
+              if (Array.isArray(el.points)) clone.points = el.points.map(p => ({ ...p }));
               const hydrated = this.cm.syncManager._hydrateElement(clone);
               if (hydrated) {
                 this.em.setElement(hydrated);
                 this.cm.syncManager.broadcastCreate(hydrated);
                 this.em.select(hydrated.id, true);
-                // BUG-011 fix: add duplicate to undo history
                 if (this.historyManager) {
                   const dup = hydrated;
                   this.historyManager.push({
                     description: 'Duplicate element',
-                    apply: () => { this.em.setElement(dup); this.cm.syncManager?.broadcastCreate(dup); },
+                    apply: () => { this.em.setElement(dup); this.cm.syncManager?.broadcastCreate(dup); this.em.select(dup.id, true); },
                     revert: () => { this.em.removeElement(dup.id); this.cm.syncManager?.broadcastDelete(dup.id); }
                   });
                 }
