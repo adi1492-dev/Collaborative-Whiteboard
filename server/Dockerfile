@@ -2,7 +2,7 @@
 # NOTE: Build context is the REPO ROOT (not server/).
 # Railway sets dockerfilePath = "server/Dockerfile" but context stays at root.
 # All COPY paths must be prefixed with "server/".
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # gcc + musl-dev needed for CGO (modernc/sqlite driver)
 RUN apk add --no-cache gcc musl-dev
