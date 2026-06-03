@@ -100,6 +100,13 @@ export class PropertyPanel {
           </button>
         </div>
       </div>
+
+      <div class="pp-divider" id="ui-divider" style="display:none"></div>
+
+      <!-- Dynamic UI Element Properties -->
+      <div class="pp-group" id="ui-props-group" style="display:none; gap: 8px;">
+        <!-- Injected via JS -->
+      </div>
     `;
 
     this._injectPPStyles();
@@ -156,6 +163,44 @@ export class PropertyPanel {
     this.container.querySelectorAll('.pp-align-btn').forEach(btn => {
       btn.addEventListener('click', () => this._applyTextAlign(btn.dataset.align));
     });
+
+    // UI Props dynamic event delegation
+    this.container.addEventListener('input', (e) => {
+      if (e.target.matches('.ui-prop-input')) {
+        this._applyUIProp(e.target.dataset.prop, e.target.type === 'checkbox' ? e.target.checked : e.target.value);
+      }
+    });
+    this.container.addEventListener('change', (e) => {
+      if (e.target.matches('.ui-theme-select')) {
+        this._applyUITheme(e.target.value);
+      }
+    });
+  }
+
+  _applyUIProp(prop, value) {
+    if (this.ih.activeTool?.name === 'select') {
+      for (const id of this.em.selectedIds) {
+        const el = this.em.elements.get(id);
+        if (el && el.type === 'ui') {
+          el.props = { ...el.props, [prop]: value };
+          if (this.sync) this.sync.broadcastUpdate(el);
+        }
+      }
+      this.em.cm.requestStaticRender();
+    }
+  }
+
+  _applyUITheme(theme) {
+    if (this.ih.activeTool?.name === 'select') {
+      for (const id of this.em.selectedIds) {
+        const el = this.em.elements.get(id);
+        if (el && el.type === 'ui') {
+          el.uiTheme = theme;
+          if (this.sync) this.sync.broadcastUpdate(el);
+        }
+      }
+      this.em.cm.requestStaticRender();
+    }
   }
 
   _applyColor(color, type) {
@@ -258,6 +303,85 @@ export class PropertyPanel {
 
     const fs = this.container.querySelector('#font-size');
     if (fs && el.style.fontSize) fs.value = el.style.fontSize;
+
+    // Show/hide UI Element controls
+    const isUI = el.type === 'ui';
+    const uiGroup = this.container.querySelector('#ui-props-group');
+    const uiDivider = this.container.querySelector('#ui-divider');
+    if (uiGroup) uiGroup.style.display = isUI ? 'flex' : 'none';
+    if (uiDivider) uiDivider.style.display = isUI ? 'block' : 'none';
+    
+    if (isUI && uiGroup) {
+      this._renderUIProps(el, uiGroup);
+    }
+  }
+
+  _renderUIProps(el, container) {
+    let html = '';
+    const textInput = (prop, label, width='80px') => `
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span style="font-size:9px;color:var(--on-surface-variant);text-transform:uppercase;">${label}</span>
+        <input type="text" class="ui-prop-input" data-prop="${prop}" value="${(el.props[prop] || '').replace(/"/g, '&quot;')}" 
+               style="width:${width};background:var(--surface-container);border:1px solid var(--outline-variant);border-radius:4px;padding:4px;color:var(--on-surface);font-size:11px;">
+      </div>
+    `;
+    const selectInput = (prop, label, options) => `
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span style="font-size:9px;color:var(--on-surface-variant);text-transform:uppercase;">${label}</span>
+        <select class="ui-prop-input" data-prop="${prop}" style="background:var(--surface-container);border:1px solid var(--outline-variant);border-radius:4px;padding:3px;color:var(--on-surface);font-size:11px;">
+          ${options.map(o => `<option value="${o}" ${el.props[prop] === o ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>
+      </div>
+    `;
+    const checkInput = (prop, label) => `
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--on-surface);cursor:pointer;margin-top:12px;">
+        <input type="checkbox" class="ui-prop-input" data-prop="${prop}" ${el.props[prop] ? 'checked' : ''}>
+        ${label}
+      </label>
+    `;
+
+    // Component-specific fields
+    switch (el.component) {
+      case 'button':
+      case 'badge':
+        html += textInput('label', 'Label');
+        html += selectInput('variant', 'Variant', ['primary', 'outlined', 'ghost', 'success', 'warning', 'error']);
+        break;
+      case 'input':
+        html += textInput('placeholder', 'Placeholder', '120px');
+        break;
+      case 'card':
+        html += textInput('title', 'Title', '100px');
+        html += textInput('body', 'Body', '140px');
+        break;
+      case 'dropdown':
+        html += textInput('label', 'Label');
+        break;
+      case 'navbar':
+        html += textInput('title', 'Brand');
+        break;
+      case 'modal':
+        html += textInput('title', 'Title', '100px');
+        html += textInput('body', 'Message', '140px');
+        break;
+      case 'toggle':
+        html += checkInput('checked', 'Checked');
+        break;
+    }
+
+    // Theme selector
+    html += `
+      <div style="width:1px;height:24px;background:rgba(255,255,255,0.08);margin:0 4px;"></div>
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span style="font-size:9px;color:var(--on-surface-variant);text-transform:uppercase;">Theme</span>
+        <select class="ui-theme-select" style="background:var(--surface-container);border:1px solid var(--outline-variant);border-radius:4px;padding:3px;color:var(--on-surface);font-size:11px;">
+          <option value="dark" ${el.uiTheme === 'dark' ? 'selected' : ''}>Dark</option>
+          <option value="light" ${el.uiTheme === 'light' ? 'selected' : ''}>Light</option>
+        </select>
+      </div>
+    `;
+
+    container.innerHTML = html;
   }
 
   show() {

@@ -973,6 +973,12 @@ export class BoardPage {
           <span style="font-size:12px;">${def.label}</span>
         `;
         btn.title = `Drag to place ${def.label}`;
+        btn.draggable = true;
+        btn.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('application/json', JSON.stringify({ type: 'ui-component', component }));
+          e.dataTransfer.effectAllowed = 'copy';
+        });
+
         btn.addEventListener('click', () => {
           // Place component at center of viewport
           if (!this.cm || !this.sync || !this.em) return;
@@ -989,7 +995,7 @@ export class BoardPage {
             height: def.defaultHeight,
             zIndex: Date.now(),
             props: { ...def.defaultProps },
-            uiTheme: document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
+            uiTheme: this._uiBuilderTheme || (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'),
           });
 
           this.em.setElement(el);
@@ -1025,6 +1031,53 @@ export class BoardPage {
       uiBtn.style.background = panelVisible ? 'rgba(192,193,255,0.15)' : '';
       uiBtn.style.borderColor = panelVisible ? 'var(--primary)' : '';
     });
+
+    // Handle drag and drop on canvas container
+    const container = this.root.querySelector('#canvas-container');
+    if (container) {
+      container.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      });
+
+      container.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const dataStr = e.dataTransfer.getData('application/json');
+        if (!dataStr) return;
+        
+        try {
+          const data = JSON.parse(dataStr);
+          if (data.type === 'ui-component' && this.cm && this.sync && this.em) {
+            const component = data.component;
+            const def = UI_COMPONENTS[component];
+            if (!def) return;
+
+            const rect = container.getBoundingClientRect();
+            const coords = this.cm.transform.screenToCanvas(e.clientX - rect.left, e.clientY - rect.top);
+
+            const el = new UIElement({
+              id: generateId(),
+              component,
+              x: coords.x - def.defaultWidth / 2,
+              y: coords.y - def.defaultHeight / 2,
+              width: def.defaultWidth,
+              height: def.defaultHeight,
+              zIndex: Date.now(),
+              props: { ...def.defaultProps },
+              uiTheme: this._uiBuilderTheme || (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'),
+            });
+
+            this.em.setElement(el);
+            this.sync.broadcastCreate(el);
+            import('../ui/Toast.js').then(({ Toast }) => {
+              Toast.show(`${def.label} dropped`, 'success', 1500);
+            });
+          }
+        } catch (err) {
+          console.error('Drop error', err);
+        }
+      });
+    }
   }
 
   _initBackgroundSettings() {
@@ -1059,7 +1112,7 @@ export class BoardPage {
 
         <div style="font-size:11px;color:var(--on-surface-variant);margin-bottom:8px;">Background</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
-          ${[['grid','Grid','grid_on'], ['dots','Dots','more_horiz'], ['lines','Lines','format_list_bulleted'], ['blank','None','crop_square']].map(([val,lbl,icon]) => `
+          ${[['grid','Grid','grid_on'], ['dots','Dots','more_horiz'], ['lines','Lines','format_list_bulleted'], ['blank','None','crop_square'], ['solid-dark','Black','dark_mode'], ['solid-light','White','light_mode']].map(([val,lbl,icon]) => `
             <button data-bg="${val}" class="bg-opt-btn" style="
               padding:8px;border-radius:8px;border:2px solid ${currentBg===val?'var(--primary)':'var(--outline-variant)'};
               background:${currentBg===val?'rgba(192,193,255,0.1)':'transparent'};

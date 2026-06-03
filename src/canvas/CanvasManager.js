@@ -135,10 +135,16 @@ export class CanvasManager {
       // Reset to DPI-scaled identity before drawing
       this.staticCtx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
       
-      this.staticCtx.fillStyle = this.isDarkMode ? '#131313' : '#f8f9ff';
+      let baseColor = this.isDarkMode ? '#131313' : '#f8f9ff';
+      if (this.backgroundType === 'solid-dark') baseColor = '#000000';
+      if (this.backgroundType === 'solid-light') baseColor = '#ffffff';
+
+      this.staticCtx.fillStyle = baseColor;
       this.staticCtx.fillRect(0, 0, this.width, this.height);
 
-      this.gridRenderer.render(this.staticCtx, this.backgroundType, this.width, this.height, this.isDarkMode);
+      if (this.backgroundType !== 'blank' && this.backgroundType !== 'solid-dark' && this.backgroundType !== 'solid-light') {
+        this.gridRenderer.render(this.staticCtx, this.backgroundType, this.width, this.height, this.isDarkMode);
+      }
 
       this.transform.applyToContext(this.staticCtx);
 
