@@ -30,6 +30,5 @@ WORKDIR /app
 
 COPY --from=builder /app/server .
 
-EXPOSE 3001
-
+# Start the server (Railway will inject the PORT environment variable)
 CMD ["./server"]
