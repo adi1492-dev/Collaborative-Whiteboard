@@ -52,10 +52,11 @@ class PanTool extends Tool {
 }
 
 export class BoardPage {
-  constructor(root, app, boardId) {
+  constructor(root, app, boardId, isPublicView = false) {
     this.root = root;
     this.app = app;
     this.boardId = boardId;
+    this.isPublicView = isPublicView;
     this.boardData = null;
     // Lifecycle guard: set to true by destroy() so any in-flight async
     // operations (like the board API fetch) bail out before creating
@@ -164,7 +165,16 @@ export class BoardPage {
     this._injectStyles();
 
     try {
-      const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}`);
+      let res;
+      if (this.isPublicView) {
+        // Extract token from hash: #/view/ID?token=...
+        const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+        const token = hashParams.get('token');
+        if (!token) throw new Error('View token is missing');
+        res = await fetch(`/api/boards/${this.boardId}/view?token=${token}`);
+      } else {
+        res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}`);
+      }
 
       // Guard: user may have navigated away while the fetch was in flight.
       // If destroyed, do NOT create InputHandler/SyncManager — their window
@@ -262,10 +272,14 @@ export class BoardPage {
 
     if (isViewer) {
       uiContainer.style.display = 'none'; // hide toolbar and properties completely
-      this.root.querySelector('#manual-save-btn').style.display = 'none';
+      const saveBtn = this.root.querySelector('#manual-save-btn');
+      if (saveBtn) saveBtn.style.display = 'none';
+      
       const reqBtn = this.root.querySelector('#request-access-btn');
-      reqBtn.style.display = 'flex';
-      reqBtn.addEventListener('click', () => this._requestAccess(reqBtn));
+      if (reqBtn && !this.isPublicView) {
+        reqBtn.style.display = 'flex';
+        reqBtn.addEventListener('click', () => this._requestAccess(reqBtn));
+      }
       this.ih.setActiveTool('pan');
     }
 

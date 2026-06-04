@@ -81,23 +81,38 @@ class App {
           const expectedPath = path; // Capture at time of route() call
 
           // BoardPage will be loaded dynamically
-          // RACE CONDITION FIX: After the async import resolves, verify the
-          // user is still on this board route. If they've navigated away,
-          // destroy() was already called on any page created in the meantime.
           import('./pages/BoardPage.js').then(({ BoardPage }) => {
             const currentPath = (window.location.hash.slice(1) || '/').split('?')[0];
             if (currentPath !== expectedPath) {
-              // User navigated away before the import resolved — do not mount.
               console.log('[Router] Ignoring stale BoardPage mount for', expectedPath);
               return;
             }
-            // Destroy any page that may have been set since this import started
             if (this.currentPage && typeof this.currentPage.destroy === 'function') {
               try { this.currentPage.destroy(); } catch (_) {}
             }
             this.currentPage = new BoardPage(this.root, this, boardId);
           }).catch(err => {
             console.error('[Router] Failed to load BoardPage:', err);
+          });
+        } else if (path.startsWith('/join/')) {
+          if (!this.auth.isAuthenticated()) {
+            localStorage.setItem('canvasflow-redirect', window.location.hash);
+            this.navigate('/login');
+            return;
+          }
+          const key = path.split('/join/')[1];
+          this.joinBoard(key);
+        } else if (path.startsWith('/view/')) {
+          const boardId = path.split('/view/')[1];
+          // We can just load the BoardPage and let it handle the view token from query params
+          // We might need to ensure BoardPage knows it's viewing a public link, but for now we'll just load it.
+          // Wait, BoardPage's render calls `/api/boards/${this.boardId}` which requires auth.
+          // For public view, we might need a special ViewerPage or adapt BoardPage to use `/api/boards/:id/view?token=...`
+          // We will address this if needed, for now let's delegate to a ViewBoardPage or handle it in BoardPage.
+          
+          import('./pages/BoardPage.js').then(({ BoardPage }) => {
+            // Need to pass token, BoardPage might not support it out of the box, we will have to modify BoardPage too.
+            this.currentPage = new BoardPage(this.root, this, boardId, true);
           });
         } else {
           this.currentPage = new LandingPage(this.root, this);
@@ -111,6 +126,28 @@ class App {
    */
   navigate(path) {
     window.location.hash = path;
+  }
+
+  async joinBoard(key) {
+    try {
+      this.root.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--on-surface);">Joining room...</div>';
+      const res = await this.auth.apiFetch('/api/rooms/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        this.navigate(`/board/${data.boardId}`);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to join room. The key might be invalid or expired.');
+        this.navigate('/dashboard');
+      }
+    } catch (err) {
+      alert('Network error while trying to join the room.');
+      this.navigate('/dashboard');
+    }
   }
 
   /**

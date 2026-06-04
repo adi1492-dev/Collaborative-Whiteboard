@@ -41,7 +41,14 @@ export class SyncManager {
     const apiHost = apiHostRaw.replace(/\/$/, ''); // strip trailing slash to prevent //ws/board/
     const url = `${wsProtocol}//${apiHost}/ws/board/${boardId}`;
 
-    this.ws = new WebSocketClient(url, () => this.app.auth.getAccessToken());
+    let tokenGetter = () => this.app.auth.getAccessToken();
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const viewToken = hashParams.get('token');
+    if (window.location.hash.startsWith('#/view/') && viewToken) {
+      tokenGetter = () => viewToken;
+    }
+
+    this.ws = new WebSocketClient(url, tokenGetter);
 
     // P2P Manager
     this.p2p = new WebRTCManager(this, this.ws, this.ws.clientId);
