@@ -17,12 +17,35 @@ export class ShareModal {
     if (boardData) this.boardData = boardData;
     if (this._el) this.hide();
 
+    this.accessRequests = [];
+
     this._el = document.createElement('div');
     this._el.className = 'sm-overlay';
     document.body.appendChild(this._el);
 
     this._render();
+
+    const isOwner = this.boardData?.ownerId === this.app.auth.getUser()?.id ||
+                    this.boardData?.ownerId === this.app.auth.getUser()?.$id;
+    if (isOwner) {
+      this._fetchRequests();
+    }
+
     requestAnimationFrame(() => this._el?.classList.add('visible'));
+  }
+
+  async _fetchRequests() {
+    try {
+      const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/access/requests?status=pending`);
+      if (res.ok) {
+        const data = await res.json();
+        this.accessRequests = data.requests || [];
+        // Only re-render if we actually have the modal open
+        if (this._el) this._render();
+      }
+    } catch (e) {
+      console.error('Failed to fetch access requests', e);
+    }
   }
 
   hide() {
@@ -95,6 +118,36 @@ export class ShareModal {
             </button>
           </div>
           <div id="sm-invite-status" style="font-size:12px;margin-top:6px;min-height:16px;"></div>
+        </div>
+        ` : ''}
+
+        <!-- Pending Access Requests (Owner Only) -->
+        ${isOwner && this.accessRequests?.length > 0 ? `
+        <div class="sm-section" style="background: rgba(234, 179, 8, 0.05);">
+          <div class="sm-section-title">
+            <span class="material-symbols-outlined" style="color:var(--warning,#eab308)">pending_actions</span>
+            Pending Access Requests (${this.accessRequests.length})
+          </div>
+          <div class="sm-section-desc">These users requested edit access to your canvas.</div>
+          <div class="sm-collab-list" style="margin-top:12px;">
+            ${this.accessRequests.map(req => `
+              <div class="sm-collab-item" style="border: 1px solid rgba(234, 179, 8, 0.2);">
+                <div class="sm-collab-avatar" style="background:${req.userAvatarColor || 'rgba(192,193,255,0.2)'}">${this._initials(req.userDisplayName || req.userEmail || '?')}</div>
+                <div class="sm-collab-info">
+                  <div class="sm-collab-name">${req.userDisplayName || 'Unknown User'}</div>
+                  <div class="sm-collab-email">${req.userEmail || ''}</div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                  <button class="icon-btn sm-req-accept" data-userid="${req.userId}" title="Approve" style="background:rgba(52,211,153,0.15);color:#34d399;width:28px;height:28px;">
+                    <span class="material-symbols-outlined" style="font-size:16px;">check</span>
+                  </button>
+                  <button class="icon-btn sm-req-reject" data-userid="${req.userId}" title="Reject" style="background:rgba(248,113,113,0.15);color:#f87171;width:28px;height:28px;">
+                    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+                  </button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
         </div>
         ` : ''}
 
@@ -211,6 +264,52 @@ export class ShareModal {
         const userId = btn.dataset.userid;
         const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/collaborators/${userId}`, { method: 'DELETE' });
         if (res.ok) this._refreshAndRender();
+      });
+    });
+
+    // Accept / Reject Requests
+    this._el.querySelectorAll('.sm-req-accept').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const userId = btn.dataset.userid;
+        btn.disabled = true;
+        try {
+          const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/access/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
+          });
+          if (res.ok) {
+            import('./Toast.js').then(({ Toast }) => Toast.show('Request approved', 'success'));
+            this._fetchRequests();
+            this._refreshAndRender();
+          } else {
+            btn.disabled = false;
+          }
+        } catch (e) {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    this._el.querySelectorAll('.sm-req-reject').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const userId = btn.dataset.userid;
+        btn.disabled = true;
+        try {
+          const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/access/reject`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
+          });
+          if (res.ok) {
+            import('./Toast.js').then(({ Toast }) => Toast.show('Request rejected', 'success'));
+            this._fetchRequests();
+          } else {
+            btn.disabled = false;
+          }
+        } catch (e) {
+          btn.disabled = false;
+        }
       });
     });
   }
