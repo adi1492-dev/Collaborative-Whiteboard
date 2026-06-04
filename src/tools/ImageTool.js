@@ -49,7 +49,7 @@ export class ImageTool extends Tool {
       Toast.info('Uploading image...');
       
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('image', file);
       
       const res = await fetch('http://localhost:3001/api/upload', {
         method: 'POST',
