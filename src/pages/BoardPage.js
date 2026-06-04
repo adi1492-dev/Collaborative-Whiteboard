@@ -953,9 +953,9 @@ export class BoardPage {
     `;
 
     const categories = {
-      'Form Controls': ['button', 'input', 'toggle', 'dropdown'],
-      'Layout': ['card', 'navbar', 'modal'],
-      'Display': ['badge'],
+      'Form Controls': ['button', 'input', 'toggle', 'checkbox', 'slider', 'dropdown'],
+      'Layout': ['card', 'navbar', 'modal', 'tabs'],
+      'Display': ['badge', 'avatar'],
     };
 
     panel.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:6px;letter-spacing:0.5px;">UI COMPONENTS</div>`;

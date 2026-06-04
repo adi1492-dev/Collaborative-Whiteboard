@@ -45,6 +45,26 @@ const UI_COMPONENTS = {
     defaultWidth: 380, defaultHeight: 280,
     label: 'Modal Dialog',
     defaultProps: { title: 'Dialog Title', body: 'Are you sure you want to do this?', radius: 16 }
+  },
+  checkbox: {
+    defaultWidth: 140, defaultHeight: 24,
+    label: 'Checkbox',
+    defaultProps: { label: 'Remember me', checked: true, radius: 4 }
+  },
+  slider: {
+    defaultWidth: 200, defaultHeight: 24,
+    label: 'Slider',
+    defaultProps: { progress: 0.6, radius: 12 }
+  },
+  tabs: {
+    defaultWidth: 320, defaultHeight: 40,
+    label: 'Tabs',
+    defaultProps: { tabs: ['Details', 'Reviews', 'FAQ'], active: 0, radius: 8 }
+  },
+  avatar: {
+    defaultWidth: 48, defaultHeight: 48,
+    label: 'Avatar',
+    defaultProps: { initials: 'JD', radius: 24 }
   }
 };
 
@@ -79,6 +99,10 @@ export class UIElement extends Element {
       case 'dropdown': this._renderDropdown(ctx); break;
       case 'navbar': this._renderNavbar(ctx); break;
       case 'modal': this._renderModal(ctx); break;
+      case 'checkbox': this._renderCheckbox(ctx); break;
+      case 'slider': this._renderSlider(ctx); break;
+      case 'tabs': this._renderTabs(ctx); break;
+      case 'avatar': this._renderAvatar(ctx); break;
       default: this._renderButton(ctx);
     }
 
@@ -357,6 +381,125 @@ export class UIElement extends Element {
     ctx.fill();
     ctx.fillStyle = '#0b1c30';
     ctx.fillText('Confirm', w - 53, btnY + 18);
+  }
+
+  _renderCheckbox(ctx) {
+    const { w, h, props } = { w: this.width, h: this.height, props: this.props };
+    const c = this._colors();
+    const checked = props.checked;
+    
+    // Checkbox box
+    this._roundRect(ctx, 0, (h - 20) / 2, 20, 20, props.radius ?? 4);
+    ctx.fillStyle = checked ? c.primary : 'transparent';
+    ctx.fill();
+    ctx.strokeStyle = checked ? c.primary : c.border;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Checkmark
+    if (checked) {
+      ctx.beginPath();
+      ctx.moveTo(5, h / 2);
+      ctx.lineTo(9, h / 2 + 4);
+      ctx.lineTo(15, h / 2 - 4);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Label
+    ctx.font = `14px Inter, sans-serif`;
+    ctx.fillStyle = c.text;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(props.label || 'Checkbox', 32, h / 2);
+  }
+
+  _renderSlider(ctx) {
+    const { w, h, props } = { w: this.width, h: this.height, props: this.props };
+    const c = this._colors();
+    const progress = Math.max(0, Math.min(1, props.progress ?? 0.5));
+    
+    const trackH = 6;
+    const cy = h / 2;
+    
+    // Background track
+    this._roundRect(ctx, 0, cy - trackH / 2, w, trackH, trackH / 2);
+    ctx.fillStyle = c.border;
+    ctx.fill();
+
+    // Fill track
+    this._roundRect(ctx, 0, cy - trackH / 2, w * progress, trackH, trackH / 2);
+    ctx.fillStyle = c.primary;
+    ctx.fill();
+
+    // Thumb
+    ctx.beginPath();
+    ctx.arc(w * progress, cy, 10, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.3)';
+    ctx.shadowBlur = 4;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = c.primary;
+    ctx.stroke();
+  }
+
+  _renderTabs(ctx) {
+    const { w, h, props } = { w: this.width, h: this.height, props: this.props };
+    const c = this._colors();
+    const tabs = props.tabs || ['Tab 1', 'Tab 2'];
+    const active = props.active ?? 0;
+    
+    // Bottom border
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    ctx.lineTo(w, h);
+    ctx.strokeStyle = c.border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const tabW = w / tabs.length;
+    
+    for (let i = 0; i < tabs.length; i++) {
+      const isActive = i === active;
+      ctx.font = `${isActive ? '600' : '400'} 14px Inter, sans-serif`;
+      ctx.fillStyle = isActive ? c.primary : c.muted;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tabs[i], i * tabW + tabW / 2, h / 2);
+      
+      if (isActive) {
+        ctx.beginPath();
+        ctx.moveTo(i * tabW, h - 1);
+        ctx.lineTo((i + 1) * tabW, h - 1);
+        ctx.strokeStyle = c.primary;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  _renderAvatar(ctx) {
+    const { w, h, props } = { w: this.width, h: this.height, props: this.props };
+    const c = this._colors();
+    const r = Math.min(w, h) / 2;
+    
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, r, 0, Math.PI * 2);
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, c.primary);
+    grad.addColorStop(1, this._isDark() ? '#9899e8' : '#4b4ecc');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.font = `600 ${r}px Inter, sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(props.initials || 'AB', w / 2, h / 2);
   }
 
   toJSON() {
