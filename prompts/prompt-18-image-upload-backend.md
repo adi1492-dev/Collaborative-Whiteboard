@@ -1,0 +1,1 @@
+Implement image uploading in the Go backend. Create an /api/upload endpoint that accepts multipart/form-data. It should validate that the file is a PNG, JPEG, or WebP under 10MB. Save it to a local ./uploads directory and return the file URL.

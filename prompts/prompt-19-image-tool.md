@@ -1,0 +1,1 @@
+Create an ImageTool for the frontend. When activated, it should trigger a hidden input type=file, upload the selected image to our new /api/upload endpoint via the AuthManager, and then place an ImageElement on the canvas. Make sure to handle image aspect ratio scaling.

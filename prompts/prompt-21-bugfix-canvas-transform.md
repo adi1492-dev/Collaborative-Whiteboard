@@ -1,0 +1,1 @@
+When I zoom into the canvas and try to draw, the mouse coordinates are completely misaligned. Please review my getPointerEventCoords function and fix the math. It needs to correctly reverse the pan (translation) and zoom (scale) to map screen pixels to world coordinates.

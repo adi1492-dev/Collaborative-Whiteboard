@@ -1,0 +1,1 @@
+Write the frontend SyncManager to connect to our Go WebSocket server. It needs to automatically reconnect if the connection drops, handle sending element creations/updates, and render other users' cursors in real-time. Use a Lamport timestamp for conflict resolution (last write wins).

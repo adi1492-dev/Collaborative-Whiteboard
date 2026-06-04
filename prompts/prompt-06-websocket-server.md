@@ -1,0 +1,1 @@
+It is time to make it collaborative! Let's write the Go backend WebSocket server. Use the gorilla/websocket package. We need a Hub to manage connected clients per board room, and a Client struct to handle the read/write pumps. Include support for broadcasting messages to all clients in a room except the sender.

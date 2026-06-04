@@ -1,0 +1,1 @@
+Let's hook up a real database. Integrate SQLite using modernc.org/sqlite so it works cross-platform without CGO. Write the database schemas for Users, Boards, and Elements. Update the auth handlers to use the DB, and create a Board model to store canvas metadata.

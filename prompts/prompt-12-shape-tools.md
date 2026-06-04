@@ -1,0 +1,1 @@
+Let's expand the whiteboard tools. Create a ShapeTool that supports drawing Rectangles, Ellipses, Diamonds, and Arrows. The user should click and drag to define the bounding box. Ensure these subclasses extend the base Element and implement their own precise render() logic.

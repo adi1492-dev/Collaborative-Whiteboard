@@ -1,0 +1,1 @@
+Let's implement drawing tools. Create a base Tool class, then implement a PenTool for freehand drawing (recording an array of points) and a SelectTool for clicking and dragging elements around the canvas. Make sure they integrate with the CanvasManager event listeners.

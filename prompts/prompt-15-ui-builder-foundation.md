@@ -1,0 +1,1 @@
+I want this whiteboard to double as a UI prototyping tool. Create a UIElement class that can render standard HTML-like components on the canvas: Buttons, Input fields, and Dropdowns. Give them a modern, premium aesthetic (glassmorphism, subtle shadows, inter font).

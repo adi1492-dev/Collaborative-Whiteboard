@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  canvasflow:
+    build: .
+    container_name: canvasflow
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - UPLOAD_DIR=./uploads
+    # Volumes are optional for local evaluation. 
+    # Uncomment below to persist images and database across container restarts.
+    # volumes:
+    #   - canvasflow_uploads:/app/server/uploads
+    #   - canvasflow_db:/app/server/offline_queue.db
+
+# volumes:
+#   canvasflow_uploads:
+#   canvasflow_db:

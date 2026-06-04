@@ -1,0 +1,1 @@
+Create a StickyTool that drops a square StickyNote element. It should have a background color (like yellow or blue), a slight drop shadow for depth, and support multi-line text with word wrapping. Ensure the text wraps correctly within the boundaries of the sticky note.

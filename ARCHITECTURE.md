@@ -1,63 +1,119 @@
-# Architecture Overview
+# 🏛️ CanvasFlow Architecture & Technical Decisions
 
-CanvasFlow is a real-time collaborative whiteboard built to simulate a "Figma-lite" experience. The application is designed to support 10+ concurrent users, 60fps rendering with thousands of elements, and ultra-low latency real-time synchronization.
-
-This document outlines the core architecture, specifically focusing on the hybrid networking model, state synchronization, and render optimizations.
+Welcome to the internal architecture documentation for **CanvasFlow**, an advanced real-time collaborative whiteboard and UI builder. This document explains the high-level system design, the specific technical choices we made, and how the various subsystems interact.
 
 ---
 
-## 1. Hybrid Networking Architecture (WebRTC + WebSocket)
+## 1. High-Level System Architecture
 
-CanvasFlow uses a **hybrid peer-to-peer (P2P) and client-server architecture** to achieve real-time presence (cursors) and drawing sync with sub-100ms latency.
+CanvasFlow operates on a real-time Client-Server architecture, relying heavily on WebSocket connections to achieve low-latency collaborative synchronization.
 
-### The Role of WebSockets (Client-Server)
-The Go backend runs a standard WebSocket hub (`/ws/board/:id`). The WebSocket server is primarily responsible for:
-1. **Room Management & Discovery:** When a user joins a board, the WebSocket server broadcasts a `peer_joined` message to all users in the room.
-2. **WebRTC Signaling:** The WebSocket server acts as the signaling channel, routing `webrtc_offer`, `webrtc_answer`, and `webrtc_ice` messages between peers to establish direct connections.
-3. **Persistence (Host Sync):** To minimize database load and avoid sync conflicts, only **one** client in the room (the "Host") is responsible for saving the board state. The Host batches modifications and sends an HTTP POST request to `/api/boards/:id/sync` every 500ms to persist changes to the SQLite database.
+```mermaid
+graph TD
+    subgraph Client [Frontend App - Vite/JS]
+        UI[User Interface]
+        CM[Canvas Manager]
+        EM[Element Manager]
+        SM[Sync Manager]
+        
+        UI <--> CM
+        CM <--> EM
+        EM <--> SM
+    end
 
-### The Role of WebRTC (Peer-to-Peer)
-Once peers discover each other via the WebSocket server, they establish a direct WebRTC DataChannel connection. WebRTC is configured as **unordered and unreliable** (similar to UDP), ensuring the fastest possible delivery times.
+    subgraph Server [Go Backend - Gin]
+        API[REST API /api/*]
+        WS[WebSocket Hub /ws]
+        Auth[JWT Middleware]
+        
+        Auth --> API
+        Auth --> WS
+    end
 
-WebRTC DataChannels carry the heavy, high-frequency traffic:
-1. **Live Cursor Presence:** Mouse coordinates are broadcast to all peers at ~30fps.
-2. **Element Updates:** As a user drags an element or draws a freehand stroke, the delta is broadcast instantly to peers, bypassing the Go server entirely.
+    subgraph External Services
+        DB[(SQLite / Turso DB)]
+        CDN[Cloudinary CDN]
+        AI[Google Gemini AI]
+    end
+
+    SM <-->|Real-time Sync| WS
+    UI <-->|HTTP Requests| API
+    
+    API <--> DB
+    API <--> CDN
+    API <--> AI
+```
+
+### 🛠️ The Tech Stack
+
+| Layer | Technology | Rationale |
+| :--- | :--- | :--- |
+| **Frontend** | Vanilla JS (ES6+) | Explicitly avoided heavy frameworks (React/Vue) to maintain absolute control over the render loop and achieve constant 60fps performance on the HTML5 Canvas. |
+| **Backend** | Go (Golang) / Gin | Chosen for its incredible concurrency model (Goroutines) which makes managing thousands of simultaneous WebSocket connections trivial and highly efficient. |
+| **Database** | SQLite / Turso | Using `modernc.org/sqlite` for cross-platform CGO-free execution, with Turso integration for optional global edge replication. |
+| **Authentication** | JWT & bcrypt | Stateless JSON Web Tokens allow for highly scalable auth, protected by bcrypt password hashing. |
 
 ---
 
-## 2. Conflict Resolution and CRDT-Lite
+## 2. Frontend Subsystems
 
-In a collaborative environment where multiple users can manipulate the same elements simultaneously, race conditions and conflicts are inevitable. CanvasFlow employs a Last-Write-Wins (LWW) conflict resolution strategy powered by a **Lamport Logical Clock**.
+### 🎨 The Canvas Engine
+At the core of the frontend is the `CanvasManager`. It handles:
+- **High-DPI Rendering**: Automatically scaling the canvas pixel density (`window.devicePixelRatio`) to ensure text and shapes are crisp on Retina displays.
+- **The Render Loop**: Instead of an infinite `requestAnimationFrame` loop which drains battery, we use a *demand-based* rendering model (`requestStaticRender`). The canvas only redraws when an element changes or the user pans/zooms.
+- **Transforms**: The `Transform` object intercepts panning (via Middle Mouse/Spacebar) and zooming (Ctrl+Scroll) and updates a transformation matrix applied directly to the `CanvasRenderingContext2D`.
 
-### Lamport Logical Clock Implementation
-Each `SyncManager` instance maintains a local integer clock (`localClock`). 
-1. **Tick on Action:** Whenever a user creates, updates, or deletes an element, the local clock increments by 1.
-2. **Attach Timestamp:** The current `localClock` value is attached to the element payload as `updatedAt`.
-3. **Tick on Receive:** When a client receives an element update from a remote peer, it updates its own local clock to `max(localClock, remoteTimestamp, Date.now()) + 1`.
+### 🧩 Element Management
+All drawings, shapes, and UI components inherit from a base `Element` class. 
+The `ElementManager` stores these in a JavaScript `Map` (for O(1) lookups) and maintains a `sortedElements` array (sorted by `zIndex`) to dictate the render order. 
 
-### Resolving Conflicts (Last-Write-Wins)
-When a remote peer sends an update for an existing element, the local `ElementManager` compares the `updatedAt` timestamp of the incoming element against the locally stored element.
-- If `remoteElement.updatedAt > localElement.updatedAt`, the remote update is applied.
-- If `remoteElement.updatedAt <= localElement.updatedAt`, the remote update is discarded (the local user's change was more recent).
+> [!TIP]
+> **Z-Index Strategy:** We originally defaulted `zIndex` to `0`, but this caused newer canvas strokes to hide beneath older UI elements. We resolved this by defaulting new elements to `Date.now()`, ensuring chronological top-level rendering.
 
-This ensures eventual consistency across all connected clients without requiring a centralized, authoritative game-server.
+### 🧰 Tool Architecture (State Pattern)
+We implemented a dynamic tool system via the State Pattern. `InputHandler.js` intercepts all pointer events and forwards them to the active `Tool` subclass.
+
+```mermaid
+classDiagram
+    class Tool {
+        +name: String
+        +onPointerDown(e)
+        +onPointerMove(e)
+        +onPointerUp(e)
+    }
+    
+    Tool <|-- PenTool
+    Tool <|-- SelectTool
+    Tool <|-- ShapeTool
+    Tool <|-- TextTool
+    Tool <|-- ImageTool
+```
+
+### ⏪ History & State (Undo/Redo)
+The `HistoryManager` implements the **Command Pattern**. Every non-destructive action pushes a "Command" object containing an `apply()` and `revert()` function. This enables infinite, targeted undo/redo functionality that integrates perfectly with our WebSocket sync.
 
 ---
 
-## 3. Render Optimizations (Dual-Canvas Architecture)
+## 3. Backend Subsystems
 
-Canvas rendering is traditionally CPU intensive. Redrawing 10,000 shapes 60 times a second will crash most browsers. CanvasFlow solves this using a **Dual-Canvas Rendering Loop**.
+### ⚡ WebSocket Synchronization
+The real-time engine is powered by the `gorilla/websocket` package.
 
-The DOM consists of two overlapping `<canvas>` elements:
-1. **The Static Canvas (Background):** Renders the background grid and all stationary elements. This canvas is **only** redrawn when a user drops an element, finishes drawing, or deletes an item. It operates on demand (`requestStaticRender`).
-2. **The Dynamic Canvas (Foreground):** Renders active selections, bounding boxes, the current element being actively dragged or drawn, and remote peer cursors. This canvas is cleared and redrawn on every single frame (`requestAnimationFrame`), but since it only ever contains a few active items, the render cost is negligible.
+1. **The Hub**: Each active board spins up a virtual `Hub`. The hub maintains a registry of all active connections (`Clients`) for that specific board.
+2. **Read/Write Pumps**: To prevent concurrent write panics (a common Go WebSocket pitfall), every Client has a dedicated `writePump` goroutine. Outgoing messages are sent to a Go channel, and the `writePump` safely flushes them to the socket sequentially.
+3. **Conflict Resolution**: We use a Last-Write-Wins (LWW) strategy based on Lamport timestamps (`updatedAt`). When the server receives an element update, it broadcasts it to all other clients in the room.
 
-By splitting the workload, the application guarantees 60fps performance regardless of how complex the background board becomes.
+### 🔒 REST API & Authentication
+Alongside the WebSocket server, Gin serves a standard REST API:
+- **JWT Middleware**: Protects board access and user data. Tokens are passed via `Authorization: Bearer <token>`.
+- **Image Uploads**: We support two paths for image hosting. By default, images are saved to a local disk Volume (`/uploads`). If a `CLOUDINARY_URL` is provided, the backend calculates an SHA-1 cryptographic signature and securely uploads the image directly to the Cloudinary CDN.
+
+### 🤖 AI Integration
+The backend integrates with the Google Gemini API to offer AI-powered UI generation. When a user types a prompt (e.g., "A login screen"), the Go backend queries Gemini with a strict JSON-schema prompt. Gemini returns coordinates and element definitions, which the backend forwards to the frontend to instantly spawn interactive UI components on the canvas.
 
 ---
 
-## 4. Element Abstraction
+## 4. Security & Deployment
 
-All objects on the board (Shapes, Sticky Notes, Text, Freehand Paths) inherit from a base `Element` class. 
-
-The `ElementManager` treats all items generically. Because every element knows how to serialize itself (`toJSON`) and draw itself (`render`), the core networking loop and renderer do not need to know the specifics of what they are drawing. This makes adding new tools and shapes trivially easy.
+- **CORS Strategy**: The backend dynamically accepts configured origins, preventing unauthorized domains from hijacking the API.
+- **Deployment Efficiency**: The frontend is bundled via Vite into a static `dist` folder. The Go backend is compiled into a single static binary. In production, the Go server serves the frontend `dist` files directly, allowing for a hyper-efficient, single-container deployment on platforms like Railway or AWS. 

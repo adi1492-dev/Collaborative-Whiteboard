@@ -1,0 +1,1 @@
+On the frontend, build an AuthManager class to handle login state. Store the JWT access token in memory and a refresh token in localStorage for security against XSS. Implement an apiFetch wrapper that automatically adds the Bearer token and handles automatic token refreshing if we get a 401 response.

@@ -1,0 +1,1 @@
+The TextEditor aggressively deletes elements if they are left empty. If I create a Sticky Note and click away without typing, it vanishes! Update the logic so it ONLY deletes empty "text" elements, but preserves Sticky Notes, Shapes, and UI components even if their text is blank.

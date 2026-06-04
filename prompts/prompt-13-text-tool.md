@@ -1,0 +1,1 @@
+I need a way to add text. Drawing text on a canvas is tricky, so let's use a hybrid approach. Create a TextEditor class that creates an invisible DOM textarea positioned exactly over the canvas element to capture user input. Once they hit Enter or click away, render the final text onto the canvas using ctx.fillText.

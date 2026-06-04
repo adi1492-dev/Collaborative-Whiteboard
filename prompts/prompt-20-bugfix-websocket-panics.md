@@ -1,0 +1,1 @@
+I am getting concurrent write panics in my Go WebSocket server. Multiple goroutines are trying to write to the same websocket connection at once. Please help me fix this by implementing a dedicated write pump goroutine for each client and using a channel to queue outgoing messages.

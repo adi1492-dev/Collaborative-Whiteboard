@@ -1,0 +1,1 @@
+I want to move image hosting to Cloudinary. Update the Go /api/upload handler to support Cloudinary. I tried using HTTP Basic Auth but got an "unknown api_key" error. Please write a proper Cloudinary REST upload function that calculates the SHA-1 signature (timestamp + api_secret) and passes the parameters as form data.

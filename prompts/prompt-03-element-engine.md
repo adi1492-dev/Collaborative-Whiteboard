@@ -1,0 +1,1 @@
+We need an object-oriented way to manage shapes on the canvas. Create a base Element class with properties like id, x, y, width, height, and zIndex. Then create an ElementManager to store these in a Map, sort them by zIndex for rendering, and provide a hitTest method to find which element is clicked.

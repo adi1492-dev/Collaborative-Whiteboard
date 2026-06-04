@@ -1,0 +1,1 @@
+There is a bug where newly drawn strokes (like highlighter) are hiding underneath existing UI components. Currently, new elements default to zIndex: 0. Please update the Element engine so new elements default to Date.now() for their zIndex, ensuring they always render on top.

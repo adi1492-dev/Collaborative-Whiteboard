@@ -1,0 +1,1 @@
+Let's secure the app. Implement a JWT authentication system in Go. I need /api/auth/register, /api/auth/login, and a middleware to protect API routes. Passwords must be hashed with bcrypt. Let's use an in-memory store for now, we will migrate to SQLite later.

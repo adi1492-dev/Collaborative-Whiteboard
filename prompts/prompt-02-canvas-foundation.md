@@ -1,0 +1,1 @@
+Now let's build the frontend Canvas engine. Create a CanvasManager class that handles setting up an HTML5 Canvas, dealing with high-DPI (Retina) displays, resizing to fit the window, and a basic render loop. I also want a Transform object to handle panning (x,y) and zooming (scale).

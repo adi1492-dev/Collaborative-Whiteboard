@@ -1,0 +1,1 @@
+Expand the UI Builder. Add rendering support for Sliders, Checkboxes, Toggle Switches, Progress Bars, and Radio Groups. Ensure the SelectTool allows the user to resize these UI elements and that the rendering scales properly without distortion.

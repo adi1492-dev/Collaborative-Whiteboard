@@ -1,0 +1,1 @@
+Let's add AI generation! Write a Go handler that connects to the Google Gemini API. The user will type a prompt (e.g., "A login form"). The AI should return a JSON array of UI elements with predefined coordinates, colors, and labels. The frontend will parse this JSON and spawn the UI elements on the canvas.

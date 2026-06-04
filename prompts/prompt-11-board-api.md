@@ -1,0 +1,1 @@
+Write the REST API handlers for Board management: POST /api/boards (create), GET /api/boards (list user boards), and POST /api/rooms/join (generate a WebSocket connection ticket). Ensure they are protected by the JWT middleware.

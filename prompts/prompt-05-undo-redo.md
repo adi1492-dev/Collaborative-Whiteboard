@@ -1,0 +1,1 @@
+I need a robust Undo/Redo system. Let's implement the Command pattern. Create a HistoryManager that maintains an undo stack and a redo stack. Every action (moving an element, drawing a stroke) should push an object with an apply() and revert() function. Hook this up to Ctrl+Z and Ctrl+Y.
