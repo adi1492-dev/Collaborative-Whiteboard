@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/canvasflow/server/config"
 	"github.com/gin-gonic/gin"
@@ -18,11 +21,11 @@ import (
 
 // AllowedImageTypes lists accepted MIME types for image uploads.
 var AllowedImageTypes = map[string]bool{
-	"image/png":  true,
-	"image/jpeg": true,
-	"image/gif":  true,
-	"image/webp": true,
-	"image/jpg":  true,
+	"image/png":   true,
+	"image/jpeg":  true,
+	"image/gif":   true,
+	"image/webp":  true,
+	"image/jpg":   true,
 	"image/pjpeg": true,
 }
 
@@ -97,6 +100,12 @@ func uploadToCloudinary(data []byte, cloudinaryURL string) (string, error) {
 	}
 	cloudName := parts[1]
 	credentials := parts[0] // api_key:api_secret
+	credParts := strings.SplitN(credentials, ":", 2)
+	if len(credParts) != 2 {
+		return "", fmt.Errorf("invalid credentials format")
+	}
+	apiKey := credParts[0]
+	apiSecret := credParts[1]
 
 	uploadURL := fmt.Sprintf("https://api.cloudinary.com/v1_1/%s/image/upload", cloudName)
 
@@ -113,8 +122,17 @@ func uploadToCloudinary(data []byte, cloudinaryURL string) (string, error) {
 		return "", err
 	}
 
-	// Add upload_preset or use unsigned upload
-	_ = writer.WriteField("upload_preset", "ml_default") // fallback preset
+	// Generate signature for authenticated upload
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	stringToSign := "timestamp=" + timestamp + apiSecret
+	h := sha1.New()
+	h.Write([]byte(stringToSign))
+	signature := fmt.Sprintf("%x", h.Sum(nil))
+
+	_ = writer.WriteField("api_key", apiKey)
+	_ = writer.WriteField("timestamp", timestamp)
+	_ = writer.WriteField("signature", signature)
+
 	writer.Close()
 
 	req, err := http.NewRequest("POST", uploadURL, &body)
@@ -122,11 +140,6 @@ func uploadToCloudinary(data []byte, cloudinaryURL string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	// Use Basic Auth with api_key:api_secret
-	credParts := strings.SplitN(credentials, ":", 2)
-	if len(credParts) == 2 {
-		req.SetBasicAuth(credParts[0], credParts[1])
-	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
