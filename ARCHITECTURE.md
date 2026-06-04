@@ -109,8 +109,7 @@ Alongside the WebSocket server, Gin serves a standard REST API:
 - **Advanced Sharing & Access Workflow**: We support public, view-only links backed by dedicated read-only JWTs. When an unauthenticated user attempts to request edit access, the frontend automatically initiates a login/registration flow and seamlessly continues the request upon return via URL hash flags (`#request_access=1`). The backend records these pending requests, allowing the board owner to dynamically approve or reject them via the UI.
 - **Image Uploads**: We support two paths for image hosting. By default, images are saved to a local disk Volume (`/uploads`). If a `CLOUDINARY_URL` is provided, the backend calculates an SHA-1 cryptographic signature and securely uploads the image directly to the Cloudinary CDN.
 
-### 🤖 AI Integration
-The backend integrates with the Google Gemini API to offer AI-powered UI generation. When a user types a prompt (e.g., "A login screen"), the Go backend queries Gemini with a strict JSON-schema prompt. Gemini returns coordinates and element definitions, which the backend forwards to the frontend to instantly spawn interactive UI components on the canvas.
+
 
 ---
 
