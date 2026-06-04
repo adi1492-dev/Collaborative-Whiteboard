@@ -276,7 +276,7 @@ export class BoardPage {
       if (saveBtn) saveBtn.style.display = 'none';
       
       const reqBtn = this.root.querySelector('#request-access-btn');
-      if (reqBtn && !this.isPublicView) {
+      if (reqBtn) {
         reqBtn.style.display = 'flex';
         reqBtn.addEventListener('click', () => this._requestAccess(reqBtn));
       }
@@ -475,9 +475,69 @@ export class BoardPage {
 
     // P2P count update every 5s
     this._peerCountInterval = setInterval(() => this._updatePeerCount(), 5000);
+
+    // Auto-trigger request access if redirected from login
+    if (window.location.hash.includes('request_access=1')) {
+      const newHash = window.location.hash.replace(/[?&]request_access=1/, '');
+      window.history.replaceState(null, '', newHash);
+      setTimeout(() => {
+        const reqBtn = this.root.querySelector('#request-access-btn');
+        if (reqBtn && reqBtn.style.display !== 'none') {
+          this._requestAccess(reqBtn);
+        }
+      }, 800);
+    }
+  }
+
+  _showAuthPopup() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-content glass';
+    modal.style.cssText = 'position:relative;background:var(--surface);padding:32px;border-radius:16px;width:400px;max-width:90vw;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.1);';
+
+    modal.innerHTML = `
+      <div style="width:56px;height:56px;border-radius:50%;background:rgba(192,193,255,0.1);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+        <span class="material-symbols-outlined" style="font-size:28px;color:var(--primary);">lock_person</span>
+      </div>
+      <h3 style="margin:0 0 8px;font-size:20px;color:var(--on-surface);">Sign In Required</h3>
+      <p style="margin:0 0 24px;font-size:14px;color:var(--on-surface-variant);line-height:1.5;">
+        You are currently viewing this canvas as a guest. To request edit access from the owner, please log in or create an account.
+      </p>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <button class="btn btn-outline" id="auth-register-btn" style="flex:1;">Register</button>
+        <button class="btn btn-primary" id="auth-login-btn" style="flex:1;">Log In</button>
+      </div>
+      <button class="icon-btn" id="close-auth-modal" style="position:absolute;top:12px;right:12px;margin:0;"><span class="material-symbols-outlined">close</span></button>
+    `;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const closeModal = () => overlay.remove();
+    overlay.querySelector('#close-auth-modal').addEventListener('click', closeModal);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+    const handleRedirect = (path) => {
+      closeModal();
+      const currentHash = window.location.hash;
+      const separator = currentHash.includes('?') ? '&' : '?';
+      localStorage.setItem('canvasflow-redirect', currentHash + separator + 'request_access=1');
+      this.app.navigate(path);
+    };
+
+    overlay.querySelector('#auth-login-btn').addEventListener('click', () => handleRedirect('/login'));
+    overlay.querySelector('#auth-register-btn').addEventListener('click', () => handleRedirect('/register'));
   }
 
   async _requestAccess(btn) {
+    if (!this.app.auth.isAuthenticated()) {
+      this._showAuthPopup();
+      return;
+    }
+
     btn.disabled = true;
     btn.innerHTML = `<span class="material-symbols-outlined" style="font-size:16px">hourglass_empty</span><span>Requesting...</span>`;
     try {
