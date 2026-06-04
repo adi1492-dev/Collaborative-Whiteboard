@@ -20,6 +20,7 @@
 | 🧩 **UI Builder** | Drag-and-drop modern UI components (Buttons, Inputs, Sliders, Checkboxes) for rapid wireframing. |
 | 🤖 **AI Generation** | Type a prompt (e.g., "Login Screen") and our Google Gemini integration will magically generate the UI layout directly onto your canvas. |
 | 🖼️ **Image Uploads** | Upload images securely via Cloudinary, with automatic fallback to local disk storage if an API key is absent. |
+| 🔗 **Advanced Sharing** | Generate public view-only links. Guests can securely request edit access, which owners can approve seamlessly in real-time. |
 | 🔒 **Security** | Robust JWT-based authentication to protect your boards and user data. |
 | 💽 **Local-First Database** | Uses Turso / SQLite for lightning-fast edge replication and offline capabilities. |
 
