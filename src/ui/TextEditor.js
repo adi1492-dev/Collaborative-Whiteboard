@@ -7,6 +7,7 @@ export class TextEditor {
     this.cm = canvasManager;
     this.currentElement = null;
     this.onCommit = null; // Callback(element) when text is committed
+    this._lastOpenTime = 0;
 
     this._el = document.createElement('div');
     this._el.style.cssText = `
@@ -46,6 +47,7 @@ export class TextEditor {
   open(element, syncManager) {
     this.currentElement = element;
     this.sync = syncManager;
+    this._lastOpenTime = Date.now();
 
     this._position();
 
@@ -128,6 +130,8 @@ export class TextEditor {
     // Commit when clicking outside
     document.addEventListener('pointerdown', (e) => {
       if (this.currentElement && !this._el.contains(e.target)) {
+        // Prevent closing immediately if the event that opened the editor is still bubbling
+        if (Date.now() - this._lastOpenTime < 150) return;
         this.close(true);
       }
     });
