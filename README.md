@@ -1,5 +1,4 @@
-<div align="center">
-  <img src="https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1200&auto=format&fit=crop" alt="CanvasFlow Hero" style="border-radius: 12px; margin-bottom: 20px;">
+
   
   # CanvasFlow: Real-Time Collaborative Whiteboard
   
