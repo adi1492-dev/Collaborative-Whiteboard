@@ -58,7 +58,7 @@ export class SelectTool extends Tool {
     const now = Date.now();
     const hitEl = this.em.getElementAt(pt.x, pt.y);
     if (now - this._lastPointerDownTime < 400 && this._lastPointerDownEl === hitEl) {
-      if (hitEl && (hitEl.type === 'sticky' || hitEl.type === 'text')) {
+      if (hitEl && (hitEl.type === 'sticky' || hitEl.type === 'text' || hitEl.type === 'shape' || hitEl.type === 'ui')) {
         if (this.cm.textEditor) {
           this.cm.textEditor.open(hitEl, this.cm.syncManager);
           return;

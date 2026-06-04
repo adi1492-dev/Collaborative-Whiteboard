@@ -75,6 +75,22 @@ export class StickyNote extends Element {
           ctx.fillText(line, x, currentY);
           line = words[n] + ' ';
           currentY += lineHeight;
+        } else if (testWidth > maxWidth && n === 0) {
+          // Word itself is longer than maxWidth (no spaces)
+          // Fallback: character wrapping for this word
+          let charLine = '';
+          const chars = words[n].split('');
+          for (let c = 0; c < chars.length; c++) {
+            const testCharLine = charLine + chars[c];
+            if (ctx.measureText(testCharLine).width > maxWidth && c > 0) {
+              ctx.fillText(charLine, x, currentY);
+              charLine = chars[c];
+              currentY += lineHeight;
+            } else {
+              charLine = testCharLine;
+            }
+          }
+          line = charLine + ' ';
         } else {
           line = testLine;
         }

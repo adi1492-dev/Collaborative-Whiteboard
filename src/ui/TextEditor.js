@@ -52,8 +52,8 @@ export class TextEditor {
     // Set text content
     this._textarea.value = element.text || '';
     this._textarea.style.fontSize = `${(element.style?.fontSize || 14) * this.cm.transform.scale}px`;
-    this._textarea.style.color = element.type === 'sticky' ? '#131313' :
-      (document.documentElement.getAttribute('data-theme') === 'dark' ? '#e5e2e1' : '#0b1c30');
+    this._textarea.style.color = element.style?.color || element.style?.textColor || (element.type === 'sticky' ? '#131313' :
+      (document.documentElement.getAttribute('data-theme') === 'dark' ? '#e5e2e1' : '#0b1c30'));
     this._textarea.style.textAlign = element.style?.textAlign || 'center';
 
     this._el.style.display = 'block';

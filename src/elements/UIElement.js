@@ -111,6 +111,22 @@ export class UIElement extends Element {
 
   _isDark() { return this.uiTheme === 'dark'; }
 
+  get text() {
+    if (this.component === 'card' || this.component === 'modal') return this.props.body || '';
+    if (this.component === 'input') return this.props.placeholder || '';
+    if (this.component === 'navbar') return this.props.title || '';
+    if (this.component === 'slider' || this.component === 'toggle') return '';
+    return this.props.label || '';
+  }
+
+  set text(val) {
+    if (this.component === 'card' || this.component === 'modal') this.props.body = val;
+    else if (this.component === 'input') this.props.placeholder = val;
+    else if (this.component === 'navbar') this.props.title = val;
+    else if (this.component === 'slider' || this.component === 'toggle') { /* no text */ }
+    else this.props.label = val;
+  }
+
   _colors() {
     return this._isDark()
       ? { bg: '#1e1e2e', surface: '#2a2a3e', text: '#ffffff', muted: '#9ca3af', primary: '#c0c1ff', border: 'rgba(255,255,255,0.12)' }
@@ -223,7 +239,8 @@ export class UIElement extends Element {
     // Body text
     ctx.font = `13px Inter, sans-serif`;
     ctx.fillStyle = c.muted;
-    ctx.fillText(props.body || '', 16, 68);
+    ctx.textBaseline = 'top';
+    this._wrapText(ctx, props.body || '', 16, 56, w - 32, 18);
   }
 
   _renderBadge(ctx) {
@@ -364,7 +381,8 @@ export class UIElement extends Element {
     // Body
     ctx.font = `13px Inter, sans-serif`;
     ctx.fillStyle = c.muted;
-    ctx.fillText(props.body || '', 20, 80);
+    ctx.textBaseline = 'top';
+    this._wrapText(ctx, props.body || '', 20, 60, w - 40, 18);
 
     // Buttons
     const btnY = h - 52;
@@ -500,6 +518,47 @@ export class UIElement extends Element {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(props.initials || 'AB', w / 2, h / 2);
+  }
+
+  _wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+    const lines = text.split('\n');
+    let currentY = y;
+
+    for (let i = 0; i < lines.length; i++) {
+      const words = lines[i].split(' ');
+      let line = '';
+
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        const testWidth = metrics.width;
+        
+        if (testWidth > maxWidth && n > 0) {
+          ctx.fillText(line, x, currentY);
+          line = words[n] + ' ';
+          currentY += lineHeight;
+        } else if (testWidth > maxWidth && n === 0) {
+          // Word itself is longer than maxWidth
+          let charLine = '';
+          const chars = words[n].split('');
+          for (let c = 0; c < chars.length; c++) {
+            const testCharLine = charLine + chars[c];
+            if (ctx.measureText(testCharLine).width > maxWidth && c > 0) {
+              ctx.fillText(charLine, x, currentY);
+              charLine = chars[c];
+              currentY += lineHeight;
+            } else {
+              charLine = testCharLine;
+            }
+          }
+          line = charLine + ' ';
+        } else {
+          line = testLine;
+        }
+      }
+      ctx.fillText(line, x, currentY);
+      currentY += lineHeight;
+    }
   }
 
   toJSON() {
