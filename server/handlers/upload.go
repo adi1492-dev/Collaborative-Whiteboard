@@ -22,6 +22,8 @@ var AllowedImageTypes = map[string]bool{
 	"image/jpeg": true,
 	"image/gif":  true,
 	"image/webp": true,
+	"image/jpg":  true,
+	"image/pjpeg": true,
 }
 
 // UploadImage handles POST /api/upload — multipart image upload.

@@ -56,7 +56,14 @@ export class ImageTool extends Tool {
         body: formData
       });
       
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) {
+        let errMsg = 'Upload failed';
+        try {
+          const errData = await res.json();
+          if (errData.error) errMsg = errData.error;
+        } catch (e) {}
+        throw new Error(errMsg);
+      }
       
       const data = await res.json();
       
@@ -88,7 +95,7 @@ export class ImageTool extends Tool {
       
     } catch (err) {
       console.error(err);
-      Toast.error('Failed to upload image');
+      Toast.error(err.message || 'Failed to upload image');
     }
   }
 }
