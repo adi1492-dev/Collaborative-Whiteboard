@@ -51,9 +51,8 @@ export class ImageTool extends Tool {
       const formData = new FormData();
       formData.append('image', file);
       
-      const res = await fetch('http://localhost:3001/api/upload', {
+      const res = await this.auth.apiFetch('/api/upload', {
         method: 'POST',
-        headers: this.auth.getAuthHeaders(),
         body: formData
       });
       
@@ -67,12 +66,13 @@ export class ImageTool extends Tool {
       const cy = viewport.minY + viewport.height / 2;
       
       // We start with a default 100x100, the ImageElement will auto-resize when loaded
+      const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
       const imgElement = new ImageElement({
         x: cx - 50,
         y: cy - 50,
         width: 100, 
         height: 100,
-        src: 'http://localhost:3001' + data.url,
+        src: API_BASE + data.url,
         createdBy: this.cm.syncManager ? this.cm.syncManager.userId : 'local'
       });
       
