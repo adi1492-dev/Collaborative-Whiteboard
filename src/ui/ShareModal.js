@@ -138,10 +138,10 @@ export class ShareModal {
                   <div class="sm-collab-email">${req.userEmail || ''}</div>
                 </div>
                 <div style="display:flex;gap:6px;">
-                  <button class="icon-btn sm-req-accept" data-userid="${req.userId}" title="Approve" style="background:rgba(52,211,153,0.15);color:#34d399;width:28px;height:28px;">
+                  <button class="icon-btn sm-req-accept" data-reqid="${req.id}" title="Approve" style="background:rgba(52,211,153,0.15);color:#34d399;width:28px;height:28px;">
                     <span class="material-symbols-outlined" style="font-size:16px;">check</span>
                   </button>
-                  <button class="icon-btn sm-req-reject" data-userid="${req.userId}" title="Reject" style="background:rgba(248,113,113,0.15);color:#f87171;width:28px;height:28px;">
+                  <button class="icon-btn sm-req-reject" data-reqid="${req.id}" title="Reject" style="background:rgba(248,113,113,0.15);color:#f87171;width:28px;height:28px;">
                     <span class="material-symbols-outlined" style="font-size:16px;">close</span>
                   </button>
                 </div>
@@ -270,13 +270,13 @@ export class ShareModal {
     // Accept / Reject Requests
     this._el.querySelectorAll('.sm-req-accept').forEach(btn => {
       btn.addEventListener('click', async () => {
-        const userId = btn.dataset.userid;
+        const requestId = btn.dataset.reqid;
         btn.disabled = true;
         try {
           const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/access/approve`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId })
+            body: JSON.stringify({ requestId })
           });
           if (res.ok) {
             import('./Toast.js').then(({ Toast }) => Toast.show('Request approved', 'success'));
@@ -293,13 +293,13 @@ export class ShareModal {
 
     this._el.querySelectorAll('.sm-req-reject').forEach(btn => {
       btn.addEventListener('click', async () => {
-        const userId = btn.dataset.userid;
+        const requestId = btn.dataset.reqid;
         btn.disabled = true;
         try {
           const res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/access/reject`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId })
+            body: JSON.stringify({ requestId })
           });
           if (res.ok) {
             import('./Toast.js').then(({ Toast }) => Toast.show('Request rejected', 'success'));
