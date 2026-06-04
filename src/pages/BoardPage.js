@@ -171,7 +171,7 @@ export class BoardPage {
         const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
         const token = hashParams.get('token');
         if (!token) throw new Error('View token is missing');
-        res = await fetch(`/api/boards/${this.boardId}/view?token=${token}`);
+        res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}/view?token=${token}`);
       } else {
         res = await this.app.auth.apiFetch(`/api/boards/${this.boardId}`);
       }
