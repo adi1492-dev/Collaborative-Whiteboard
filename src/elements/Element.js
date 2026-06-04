@@ -13,7 +13,7 @@ export class Element {
     this.width = options.width || 100;
     this.height = options.height || 100;
     this.rotation = options.rotation || 0;
-    this.zIndex = options.zIndex || 0;
+    this.zIndex = options.zIndex !== undefined ? options.zIndex : Date.now();
     this.locked = options.locked || false;
     this.opacity = options.opacity !== undefined ? options.opacity : 1;
     this.visible = options.visible !== false;

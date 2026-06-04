@@ -67,7 +67,7 @@ export class TextEditor {
     if (commit) {
       const newText = this._textarea.value.trim();
       
-      if (!newText) {
+      if (!newText && (this.currentElement.type === 'text' || this.currentElement.type === 'comment')) {
         // Text is empty, delete the element to prevent invisible clutter
         const elId = this.currentElement.id;
         if (this.cm && this.cm.elementManager) {
