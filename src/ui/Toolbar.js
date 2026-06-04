@@ -33,6 +33,11 @@ export class Toolbar {
       { id: 'sticky', icon: 'sticky_note_2', tooltip: 'Sticky Note (S)' },
       { id: 'text', icon: 'title', tooltip: 'Text (T)' },
       { separator: true },
+      { id: 'highlighter', icon: 'format_ink_highlighter', tooltip: 'Highlighter' },
+      { id: 'laser', icon: 'flare', tooltip: 'Laser Pointer' },
+      { separator: true },
+      { id: 'frame', icon: 'crop_free', tooltip: 'Frame (F)' },
+      { separator: true },
       { id: 'eraser', icon: 'ink_eraser', tooltip: 'Eraser (E)' },
       { id: 'image', icon: 'image', tooltip: 'Image' }
     ];

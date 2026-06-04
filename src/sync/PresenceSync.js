@@ -16,6 +16,8 @@ export class PresenceSync {
 
     // Listen for fallback WS cursor events just in case
     this.ws.on('cursor_move', this._onRemoteCursor.bind(this));
+    this.ws.on('laser_pointer', this._onRemoteLaser.bind(this));
+    this.lasers = new Map(); // userId -> { points: [], color, lastSeen }
   }
 
   updateCursor(worldX, worldY) {
@@ -70,6 +72,38 @@ export class PresenceSync {
     }
   }
 
+  sendLaserPoint(worldX, worldY) {
+    const user = this.cm.syncManager?.app.auth.getUser();
+    const userId = user ? (user.id || user.$id || user.uid) : (this.ws?.clientId || 'unknown');
+    const payload = { x: worldX, y: worldY, userId };
+
+    if (this.p2p) {
+      const sent = this.p2p.broadcast('laser_pointer', payload);
+      if (this.cm.syncManager && this.cm.syncManager._getMissingP2PCount(sent) > 0) {
+        this.ws.send('laser_pointer', payload);
+      }
+    } else {
+      this.ws.send('laser_pointer', payload);
+    }
+
+    this._addLaserPoint(userId, worldX, worldY, '#ef476f'); // Local laser is red
+  }
+
+  _onRemoteLaser(msg) {
+    const userId = msg.userId || msg.clientId;
+    const pt = msg.payload;
+    this._addLaserPoint(userId, pt.x, pt.y, this._getUserColor(userId));
+  }
+
+  _addLaserPoint(userId, x, y, color) {
+    if (!this.lasers.has(userId)) {
+      this.lasers.set(userId, { points: [], color, lastSeen: Date.now() });
+    }
+    const laser = this.lasers.get(userId);
+    laser.points.push({ x, y, time: Date.now() });
+    laser.lastSeen = Date.now();
+  }
+
   removeCursor(userId) {
     this.cursors.delete(userId);
   }
@@ -109,6 +143,57 @@ export class PresenceSync {
     }
 
     // Since this runs in the active render loop, returning true means we need to keep rendering
+    return hasChanges;
+  }
+
+  renderLasers(ctx) {
+    const now = Date.now();
+    let hasChanges = false;
+    const maxAge = 800; // Laser tail lasts 800ms
+
+    for (const [userId, laser] of this.lasers.entries()) {
+      const origCount = laser.points.length;
+      laser.points = laser.points.filter(p => now - p.time < maxAge);
+      if (laser.points.length < origCount) hasChanges = true;
+
+      if (laser.points.length > 1) {
+        hasChanges = true;
+        ctx.save();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        
+        // Draw the tail as a segmented path with fading opacity
+        for (let i = 1; i < laser.points.length; i++) {
+          const p1 = laser.points[i - 1];
+          const p2 = laser.points[i];
+          const age = now - p2.time;
+          const life = 1 - (age / maxAge);
+          
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.strokeStyle = laser.color;
+          ctx.lineWidth = 4 + (life * 4); // Tail tapers
+          ctx.globalAlpha = life;
+          ctx.stroke();
+        }
+        
+        // Draw glowing head
+        const head = laser.points[laser.points.length - 1];
+        ctx.beginPath();
+        ctx.arc(head.x, head.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = laser.color;
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = laser.color;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (laser.points.length === 0 && now - laser.lastSeen > maxAge) {
+        this.lasers.delete(userId);
+      }
+    }
     return hasChanges;
   }
 

@@ -65,6 +65,31 @@ const UI_COMPONENTS = {
     defaultWidth: 48, defaultHeight: 48,
     label: 'Avatar',
     defaultProps: { initials: 'JD', radius: 24 }
+  },
+  textarea: {
+    defaultWidth: 240, defaultHeight: 120,
+    label: 'Textarea',
+    defaultProps: { placeholder: 'Enter description...', radius: 8 }
+  },
+  radio: {
+    defaultWidth: 200, defaultHeight: 80,
+    label: 'Radio Group',
+    defaultProps: { options: ['Option 1', 'Option 2'], active: 0 }
+  },
+  stepper: {
+    defaultWidth: 120, defaultHeight: 36,
+    label: 'Number Stepper',
+    defaultProps: { value: '1', radius: 8 }
+  },
+  breadcrumbs: {
+    defaultWidth: 240, defaultHeight: 24,
+    label: 'Breadcrumbs',
+    defaultProps: { path: ['Home', 'Category', 'Product'] }
+  },
+  pagination: {
+    defaultWidth: 240, defaultHeight: 36,
+    label: 'Pagination',
+    defaultProps: { pages: 5, active: 1, radius: 4 }
   }
 };
 
@@ -103,6 +128,11 @@ export class UIElement extends Element {
       case 'slider': this._renderSlider(ctx); break;
       case 'tabs': this._renderTabs(ctx); break;
       case 'avatar': this._renderAvatar(ctx); break;
+      case 'textarea': this._renderTextarea(ctx); break;
+      case 'radio': this._renderRadio(ctx); break;
+      case 'stepper': this._renderStepper(ctx); break;
+      case 'breadcrumbs': this._renderBreadcrumbs(ctx); break;
+      case 'pagination': this._renderPagination(ctx); break;
       default: this._renderButton(ctx);
     }
 
@@ -113,17 +143,19 @@ export class UIElement extends Element {
 
   get text() {
     if (this.component === 'card' || this.component === 'modal') return this.props.body || '';
-    if (this.component === 'input') return this.props.placeholder || '';
+    if (this.component === 'input' || this.component === 'textarea') return this.props.placeholder || '';
     if (this.component === 'navbar') return this.props.title || '';
-    if (this.component === 'slider' || this.component === 'toggle') return '';
+    if (this.component === 'stepper') return this.props.value || '';
+    if (this.component === 'slider' || this.component === 'toggle' || this.component === 'radio' || this.component === 'breadcrumbs' || this.component === 'pagination') return '';
     return this.props.label || '';
   }
 
   set text(val) {
     if (this.component === 'card' || this.component === 'modal') this.props.body = val;
-    else if (this.component === 'input') this.props.placeholder = val;
+    else if (this.component === 'input' || this.component === 'textarea') this.props.placeholder = val;
     else if (this.component === 'navbar') this.props.title = val;
-    else if (this.component === 'slider' || this.component === 'toggle') { /* no text */ }
+    else if (this.component === 'stepper') this.props.value = val;
+    else if (this.component === 'slider' || this.component === 'toggle' || this.component === 'radio' || this.component === 'breadcrumbs' || this.component === 'pagination') { /* no text */ }
     else this.props.label = val;
   }
 
@@ -518,6 +550,171 @@ export class UIElement extends Element {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(props.initials || 'AB', w / 2, h / 2);
+  }
+
+  _renderTextarea(ctx) {
+    const { w, h, props } = { w: this.width, h: this.height, props: this.props };
+    const c = this._colors();
+    const r = props.radius ?? 8;
+
+    this._roundRect(ctx, 0, 0, w, h, r);
+    ctx.fillStyle = c.surface;
+    ctx.fill();
+    ctx.strokeStyle = c.border;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.font = `14px Inter, sans-serif`;
+    ctx.fillStyle = c.muted;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    this._wrapText(ctx, props.placeholder || 'Enter text...', 14, 14, w - 28, 20);
+
+    // Resize handle hint (bottom right)
+    ctx.beginPath();
+    ctx.moveTo(w - 14, h - 6);
+    ctx.lineTo(w - 6, h - 14);
+    ctx.moveTo(w - 10, h - 6);
+    ctx.lineTo(w - 6, h - 10);
+    ctx.strokeStyle = c.muted;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  _renderRadio(ctx) {
+    const { w, h, props } = { w: this.width, h: this.height, props: this.props };
+    const c = this._colors();
+    const options = props.options || ['Option 1', 'Option 2'];
+    const active = props.active ?? 0;
+    
+    const rowHeight = h / options.length;
+
+    for (let i = 0; i < options.length; i++) {
+      const cy = i * rowHeight + rowHeight / 2;
+      const isActive = i === active;
+      
+      // Outer circle
+      ctx.beginPath();
+      ctx.arc(12, cy, 8, 0, Math.PI * 2);
+      ctx.strokeStyle = isActive ? c.primary : c.border;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Inner circle
+      if (isActive) {
+        ctx.beginPath();
+        ctx.arc(12, cy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = c.primary;
+        ctx.fill();
+      }
+
+      ctx.font = `14px Inter, sans-serif`;
+      ctx.fillStyle = c.text;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(options[i], 32, cy);
+    }
+  }
+
+  _renderStepper(ctx) {
+    const { w, h, props } = { w: this.width, h: this.height, props: this.props };
+    const c = this._colors();
+    const r = props.radius ?? 8;
+
+    this._roundRect(ctx, 0, 0, w, h, r);
+    ctx.fillStyle = c.surface;
+    ctx.fill();
+    ctx.strokeStyle = c.border;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Dividers
+    ctx.beginPath();
+    ctx.moveTo(32, 0); ctx.lineTo(32, h);
+    ctx.moveTo(w - 32, 0); ctx.lineTo(w - 32, h);
+    ctx.stroke();
+
+    ctx.font = `18px Inter, sans-serif`;
+    ctx.fillStyle = c.text;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Minus
+    ctx.fillText('-', 16, h / 2);
+    // Plus
+    ctx.fillText('+', w - 16, h / 2);
+    
+    // Value
+    ctx.font = `14px Inter, sans-serif`;
+    ctx.fillText(props.value || '1', w / 2, h / 2);
+  }
+
+  _renderBreadcrumbs(ctx) {
+    const { w, h, props } = { w: this.width, h: this.height, props: this.props };
+    const c = this._colors();
+    const path = props.path || ['Home', 'Category', 'Product'];
+    
+    let cx = 0;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    
+    for (let i = 0; i < path.length; i++) {
+      const isLast = i === path.length - 1;
+      ctx.font = `${isLast ? '600' : '400'} 13px Inter, sans-serif`;
+      ctx.fillStyle = isLast ? c.text : c.muted;
+      ctx.fillText(path[i], cx, h / 2);
+      cx += ctx.measureText(path[i]).width + 8;
+      
+      if (!isLast) {
+        ctx.fillStyle = c.border;
+        ctx.fillText('/', cx, h / 2);
+        cx += ctx.measureText('/').width + 8;
+      }
+    }
+  }
+
+  _renderPagination(ctx) {
+    const { w, h, props } = { w: this.width, h: this.height, props: this.props };
+    const c = this._colors();
+    const pages = props.pages ?? 5;
+    const active = props.active ?? 1;
+    const r = props.radius ?? 4;
+    
+    // Calculate total width of buttons (pages + prev + next)
+    const btnW = 32;
+    const gap = 4;
+    const totalBtn = pages + 2;
+    const totalW = totalBtn * btnW + (totalBtn - 1) * gap;
+    
+    let startX = (w - totalW) / 2;
+    
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `14px Inter, sans-serif`;
+
+    const drawBtn = (x, text, isActive, isEnabled) => {
+      this._roundRect(ctx, x, (h - btnW)/2, btnW, btnW, r);
+      if (isActive) {
+        ctx.fillStyle = c.primary;
+        ctx.fill();
+        ctx.fillStyle = '#0b1c30';
+      } else {
+        ctx.strokeStyle = c.border;
+        ctx.stroke();
+        ctx.fillStyle = isEnabled ? c.text : c.muted;
+      }
+      ctx.fillText(text, x + btnW/2, h/2);
+    };
+
+    drawBtn(startX, '<', false, active > 1);
+    startX += btnW + gap;
+    
+    for (let i = 1; i <= pages; i++) {
+      drawBtn(startX, String(i), i === active, true);
+      startX += btnW + gap;
+    }
+    
+    drawBtn(startX, '>', false, active < pages);
   }
 
   _wrapText(ctx, text, x, y, maxWidth, lineHeight) {

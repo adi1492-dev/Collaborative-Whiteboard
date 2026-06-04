@@ -12,6 +12,7 @@ import { TextElement } from '../elements/TextElement.js';
 import { ImageElement } from '../elements/ImageElement.js';
 import { CommentElement } from '../elements/CommentElement.js';
 import { UIElement } from '../elements/UIElement.js';
+import { FrameElement } from '../elements/FrameElement.js';
 import { Element } from '../elements/Element.js';
 import { WebRTCManager } from './WebRTCManager.js';
 
@@ -387,6 +388,8 @@ export class SyncManager {
         return new CommentElement(data);
       case 'ui':
         return new UIElement(data);
+      case 'frame':
+        return new FrameElement(data);
       default:
         console.warn('[SyncManager] Unknown element type:', data.type);
         return null; // Reject unknown types rather than creating a broken base Element

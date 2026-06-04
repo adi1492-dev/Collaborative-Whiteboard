@@ -32,6 +32,9 @@ import { StickyTool } from '../tools/StickyTool.js';
 import { TextTool } from '../tools/TextTool.js';
 import { EraserTool } from '../tools/EraserTool.js';
 import { ImageTool } from '../tools/ImageTool.js';
+import { HighlighterTool } from '../tools/HighlighterTool.js';
+import { LaserPointerTool } from '../tools/LaserPointerTool.js';
+import { FrameTool } from '../tools/FrameTool.js';
 import { Tool } from '../tools/Tool.js';
 
 class PanTool extends Tool {
@@ -229,6 +232,9 @@ export class BoardPage {
     this.ih.registerTool('text', new TextTool());
     this.ih.registerTool('eraser', new EraserTool());
     this.ih.registerTool('image', new ImageTool());
+    this.ih.registerTool('highlighter', new HighlighterTool());
+    this.ih.registerTool('laser', new LaserPointerTool());
+    this.ih.registerTool('frame', new FrameTool());
     
     this.ih.setActiveTool('select');
 
@@ -953,7 +959,8 @@ export class BoardPage {
     `;
 
     const categories = {
-      'Form Controls': ['button', 'input', 'toggle', 'checkbox', 'slider', 'dropdown'],
+      'Form Controls': ['button', 'input', 'textarea', 'radio', 'stepper', 'toggle', 'checkbox', 'slider', 'dropdown'],
+      'Navigation': ['breadcrumbs', 'pagination'],
       'Layout': ['card', 'navbar', 'modal', 'tabs'],
       'Display': ['badge', 'avatar'],
     };

@@ -217,6 +217,7 @@ export class CanvasManager {
 
     if (this.syncManager) {
       this.syncManager.presenceSync.renderCursors(this.activeCtx, this.transform.scale);
+      this.syncManager.presenceSync.renderLasers(this.activeCtx);
     }
   }
 
